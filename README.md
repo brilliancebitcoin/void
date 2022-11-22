@@ -31,10 +31,24 @@ Because this wallet isn't done yet. The first send button doesn't do a coinjoin 
 
 It's not, it's stark and simple, which is only ugly to *some* people, not to me. The reason why it's stark and simple is because it's not done yet. I based it on [this project](https://github.com/supertestnet/vanilla-js-browser-wallet) in which I tried to make a general purpose wallet that any developer can customize to look how they want. I haven't customized this new wallet yet so it looks pretty much exactly like its dad. When all the functionalithy I want is present I'll try to make it prettier. (2 weeks TM.)
 
-# You said earlier that this wallet canonly receive money if it's in a coinjoin. Can you say more about that?
+# You said earlier that this wallet can only receive money if it's in a coinjoin. Can you say more about that?
 
 That's aspirational too. Right now this wallet receives money the normal way -- you show someone a bitcoin address and they can send money to it, bada boom, bada bing, you got some sats. But I built in the same functions that I use in [my coinjoin explorer](https://github.com/supertestnet/coinjoin-explorer) and when I turn that feature on the wallet will only *see* transactions if they are coinjoin transactions. So if someone tries to send you money using a normal bitcoin wallet, this one won't know about it.
 
 # Won't that be confusing? Will some people lose money?
 
 Probably not because before I release this wallet, I intend to modify the address format so that ordinary bitcoin wallets won't recognize this wallet's address format. That way they won't accidentally send you money in a transaction that your wallet can't recognize. My goal is to have it so that people can only send money into this wallet via a coinjoin, and once it's in a coinjoin, it will stay in a long series of coinjoins and hopefully never go back into a normal bitcoin address again. If I reach my goal, this wallet will interact with a subgraph of the bitcoin network that is all coinjoins all the time. Privacy ON -- by default -- no exceptions. That's my goal. Here's hoping we get there.
+
+# That sounds kind of bad. What if I want to send some coinjoined sats to someone who doesn't have this wallet? Or to a service that rejects coinjoined coins? Can I never get my money out of the void?
+
+You could if you change the software. But by design, no, my hope is that money that goes into a void wallet stays in a void wallet forever. (It can go from one void user to another, or to other wallets that add support for my new privacy-focused address format, but that's it.) This wallet is for people who want decent privacy all the time so they don't have to think about it. If someone uses some other wallet or service, this wallet just won't send to those people. (Well, right now it can, but that feature will be removed and this wallet will eventually only send to wallets that support the new privacy-focused address format I talked about earlier.)
+
+A consequence of enforcing privacy is leaving behind surveillance-friendly wallets and services. If you want to send someone money using this wallet, this wallet wants confidence that the money will stay coinjoined. The new address format I hope to unveil soon helps with that, so as soon as I make it, I want it to be a requirement in this wallet.
+
+# Are you saying samourai and wasabi and other coinjoin wallets are surveillance friendly? What if I want to send money from this wallet to those wallets?
+
+No, I'm not saying that. But this wallet won't be able to send money to them unless they add support for the new address format I'm releasing.
+
+# That seems stupid, why are you trying to push everyone to use some weird new address format of your own design?
+
+Because I have a theory. I think that people who use coinjoin get worried about things like this: oh no, you accidentally mixed toxic change with your coinjoined utxos, and now they're easy to correlate. Oh no, three of the people you coinjoined with moved their money straight to coinbase after the coinjoin, doxxing themselves and thus destroying your anonymitiy set. Etc. There are too many things that can go wrong if your wallet doesn't enforce any kind of limits. So for me, one of those limits is by making an address format that, at least initially, I know will
