@@ -21,7 +21,7 @@ If you want to park your coins somewhere where they will constantly coinjoin, vo
 
 # Who is the coordinator in void wallet?
 
-Your wallet acts as the coordinator whenever you hit the Send button. It creates a psbt, goes out to find other people who use this wallet, and invites them to be in the coinjoin. (Actually that statement is aspirational -- right now you have to manually find people to do a coinjoin with and type in their pubkeys. Give it time.) Then you pass your psbt back and forth with your selected coinjoiners until everyone has contributed some utxos and cosigned it. Then you broadcast the signed transaction. Since *your wallet* is the coordinator for *your transactions,* you don't have to pay anyone to do the coordination for you, and law enforcers have no central intermediary to target for enforcement. They'll never know who is coordinating what!
+Your wallet acts as the coordinator whenever you hit the Send button. It creates a psbt, goes out to find other people who use this wallet, and invites them to be in the coinjoin. (Actually that statement is aspirational -- right now you have to manually find people to do a coinjoin with and type in their pubkeys. Give it time.) Then you pass your psbt back and forth with your selected coinjoiners until everyone has contributed some coins and cosigned the transaction. Then you broadcast the signed transaction. Since *your wallet* is the coordinator for *your transactions,* you don't have to pay anyone to do the coordination for you, and law enforcers have no central intermediary to target for enforcement. They'll never know who is coordinating what!
 
 # Why does the send page have two send buttons?
 
