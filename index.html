@@ -2,7 +2,7 @@
 <html>
 <head>
 	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
-	<title>Bitcoin browser wallet</title>
+	<title>Void wallet</title>
 	<script src="https://supertestnet.github.io/bitcoin-chess/js/qrcode.js"></script>
 	<script src="https://bitcoincore.tech/apps/bitcoinjs-ui/lib/bitcoinjs-lib.js"></script>
 	<script src="https://bundle.run/noble-secp256k1@1.2.14"></script>
@@ -251,6 +251,7 @@
 		                                		//if ( !txIsACoinjoin( tx ) ) return;
 		                                		var coinjoin_value = getCoinjoinValue( tx );
 		                                		//if ( item[ "value" ] != coinjoin_value ) return;
+		                                		//if ( item[ "value" ] == coinjoin_value ) console.log( `I am adding to my balance one or more outputs of this value: ${coinjoin_value} from this tx: ${item[ "txid" ]}` );
 		                                        var utxo = {}
 		                                        utxo[ "tx_id" ] = item[ "txid" ];
 		                                        utxo[ "output_number" ] = item[ "vout" ];
@@ -387,15 +388,17 @@
 		}
 
         function pushBTCpmt( rawtx ) {
-            var xhttp = new XMLHttpRequest();
-            xhttp.onreadystatechange = function() {
-                if ( this.readyState == 4 && ( this.status > 199 && this.status < 300 ) ) {
-                    var response = this.responseText;
-                    console.log( "Your transaction was broadcasted, your txid is: " + response );
-                }
-            };
-            xhttp.open( "POST", "https://mempool.space/testnet/api/tx", true );
-            xhttp.send( rawtx );
+			return new Promise( function( resolve, reject ) {
+	            var xhttp = new XMLHttpRequest();
+	            xhttp.onreadystatechange = function() {
+	                if ( this.readyState == 4 && ( this.status > 199 && this.status < 300 ) ) {
+	                    var response = this.responseText;
+	                    resolve( response );
+	                }
+	            };
+	            xhttp.open( "POST", "https://mempool.space/testnet/api/tx", true );
+	            xhttp.send( rawtx );
+	        });
         }
 
 		function craftTransaction( selected_utxos, to_amount, to_address, change_address, change_amount, sats_per_byte ) {
@@ -500,7 +503,7 @@
                         console.log( "the sum of the values of each input to this transaction is", sum_of_the_values_of_each_input_to_this_transaction );
                 }
                 if ( sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee < 546 ) {
-                        console.log( "the sum of the values of each input to this transaction, i.e.", sum_of_the_values_of_each_input_to_this_transaction, "was less than the amount we need in the inputs, i.e.", amount_plus_fee, "so we need to run this function again with a higher amount_plus_fee value" );
+                        console.log( "the sum of the values of each input to this transaction, i.e.", sum_of_the_values_of_each_input_to_this_transaction, "minus the amount we need in the inputs, i.e.", amount_plus_fee, ", was less than the dust limit (546), so we need to run this function again with a higher amount_plus_fee value" );
                         var returnable = await contributeUtxosToCoinjoin( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, this_addition_is_being_done_after_the_total_transaction_size_is_known, total_transaction_size, to_amount );
                         return returnable;
                 }
@@ -515,7 +518,7 @@
 
 		function addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, this_addition_is_being_done_because_of_a_change_address = false, this_addition_is_being_done_after_the_total_transaction_size_is_known = false, total_transaction_size = 0, to_amount ) {
 		        if ( !amount_plus_fee || amount_plus_fee == "" ) {
-		                return;   
+		                return;
 		        }
 		        var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
 		        var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
@@ -626,7 +629,7 @@
 		        var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
 		        var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
 		        var array = addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
-		        if ( array[ 0 ].length > 0 && array[ 1 ] && array[ 2 ] && array[ 3 ] && array[ 4 ] && array[ 5 ] ) {
+		        if ( array[ 0 ] && array[ 0 ].length > 0 && array[ 1 ] && array[ 2 ] && array[ 3 ] && array[ 4 ] && array[ 5 ] ) {
 		                var adjusted_utxos_available_for_this_transaction = array[ 0 ];
 		                var adjusted_utxos_in_this_transaction = array[ 1 ];
 		                amount_plus_fee = array[ 2 ];
@@ -841,31 +844,20 @@
 						}
 				</script>
 				<p id="send-money-button-line">
-					<button id="send-money-button">Send</button>
+					<button id="send-money-button" onclick='prepCoinjoin( Number( $( `input[name="send-amount-input"]` ).value ), $( `input[name="send-address-input"]` ).value );'>Send</button>
 				</p>
 			</div>
 			<div>
 				<button class="home-button">Home</button> 
 			</div>
-			<div id="coinjoin-inputs">
-				<p>
-					Enter the ids of the people you will coinjoin with
-				</p>
-				<input name="coinjoiner">
-				<input name="coinjoiner">
-				<p>
-					Enter the amount of your coinjoin
-				</p>
-				<input type="number" name="cj_amt" step="1" min="546" value="546">
-				<p>
-					Enter the address you want to send money to
-				</p>
-				<input name="destination_address">
-				<p>
-					<button onclick='prepCoinjoin( [ $$( `input[name="coinjoiner"]` )[ 0 ].value, $$( `input[name="coinjoiner"]` )[ 1 ].value ], Number( $( `input[name="cj_amt"]` ).value ), $( `input[name="destination_address"]` ).value );'>Send</button>
-				</p>
-			</div>
-		</div>
+			<div id="progress" style="display: none;">
+				<h2>Progress bar <span id="goal" style="font-size: .8em; font-weight: normal;"></span></h2>
+		        <div id="progressOutline" style="height: 2em; border: 1px solid grey; border-radius: 25px; overflow: hidden;">
+		        	<div id="progressBar" style="height: 2em; background-color: #61eb34; width: 0%; transition: width 1s;">
+		        	</div>
+		        </div>
+		        <div id="cj_status"></div>
+	    	</div>
 	</div>
 	<script>
 		//start the wallet and check its balance every five seconds
@@ -918,6 +910,7 @@
 			document.getElementById( "backup-line" ).style.display = "none";
 		});
 		//make the send money button send money
+/*
 		document.getElementById( "send-money-button" ).addEventListener( "click", async function() {
 			var to_address = document.getElementById( "send-address-input" ).value;
 			var amount_to_send = Number( document.getElementById( "send-amount-input" ).value );
@@ -926,12 +919,14 @@
 			console.log( "txhex:", txhex );
 			pushBTCpmt( txhex );
 		});
+*/
 	</script>
 	<script>
         async function handleMessage( message ) {
             var [ type, subId, event ] = JSON.parse( message.data );
             var { kind, content } = event || {}
             if (!event) return
+            if ( event===true) return
             var eventData = JSON.stringify([
                 0,
                 event['pubkey'],
@@ -947,12 +942,31 @@
                 content = decrypt(nostr_privKey, event.pubkey, content)
                 takeNextSteps( content, event.pubkey );
             }
+            if (kind === 10063) {
+            	//clean out the pool's old entries
+            	Object.keys( pool ).forEach( function( key ) {
+				    var amountpool = pool[ key ];
+				    amountpool.forEach( function( joiner, index ) {
+				        if ( joiner[ "timestamp" ] < Math.floor( Date.now() / 1000 ) - 300 ) {
+				            amountpool.splice( index, 1 );
+				            pool[ key ] = amountpool;
+				        }
+				    });
+				});
+				//add a new entry to the pool
+            	if ( !pool[ content ] ) {
+	            	pool[ content ] = [{"joiner": event.pubkey, "timestamp": event.created_at}];
+	            } else {
+	            	pool[ content ].push( {"joiner": event.pubkey, "timestamp": event.created_at} );
+	            }
+                console.log( pool );
+            }
         }
     </script>
     <script>
         async function openConnection( e ) {
             console.log( "connected to " + relay );
-            var subscription = [ "REQ", subId, filter ];
+            var subscription = [ "REQ", subId, filter, { "kinds": [ 10063 ], "since": Math.floor( Date.now() / 1000 ) - 300 } ];
             socket.send( JSON.stringify( subscription ) );
         }
     </script>
@@ -1001,6 +1015,7 @@
         var subId   = bitcoinjs.ECPair.makeRandom().privateKey.toString( "hex" )
         var filter  = { "#p": [ nostr_pubKey ] }
         socket.addEventListener('open', openConnection );
+        var pool = {}
 
         async function sendDM( message, recipient ) {
             var encrypted_message = encrypt( nostr_privKey, recipient, message )
@@ -1013,6 +1028,22 @@
             }
             var signedEncryptedEvent = await getSignedEvent( encrypted_event, nostr_privKey );
             socket.send( JSON.stringify( [ "EVENT", signedEncryptedEvent ] ) );
+        }
+
+        async function swimInPool() {
+        	var balance = Number( document.getElementById( "balance" ).innerText );
+        	if ( balance < 1 ) return;
+            var message = String( balance - 546 );
+            var event = {
+                "content"    : message,
+                "created_at" : Math.floor( Date.now() / 1000 ),
+                "kind"       : 10063,
+                "tags"       : [],
+                "pubkey"     : nostr_pubKey,
+            }
+            var signedEvent = await getSignedEvent( event, nostr_privKey );
+            console.log( "pool event:", signedEvent );
+            socket.send( JSON.stringify( [ "EVENT", signedEvent ] ) );
         }
 
         async function getSignedEvent(event, privateKey) {
@@ -1149,6 +1180,9 @@
                     info_about_the_participants.push( JSON.parse( message[ "content" ] ) );
                     sessionStorage[ "info_about_the_participants" ] = JSON.stringify( info_about_the_participants );
                     console.log( `${sender_pubkey} joined your coinjoin!` );
+		            //coinjoiner located...
+		            document.getElementById( "cj_status" ).innerText = "coinjoiner located...";
+					document.getElementById( "progressBar" ).style.width = document.getElementById( "progressBar" ).style.width = Math.floor( document.getElementById( "progressBar" ).offsetWidth / document.getElementById( "progressBar" ).parentElement.offsetWidth * 100 ) + 3 + "%";
                 }
             	console.log( message[ "content" ] );
             }
@@ -1203,6 +1237,9 @@
 			                    sessionStorage[ "sigs_info" ] = JSON.stringify( sigs_info );
 			                }
 		                    console.log( `${sender_pubkey} cosigned at least once (it is okay if the message appears two times and it is also okay if it only appears one time)!` );
+				            //signature added...
+				            document.getElementById( "cj_status" ).innerText = "signature added...";
+							document.getElementById( "progressBar" ).style.width = document.getElementById( "progressBar" ).style.width = Math.floor( document.getElementById( "progressBar" ).offsetWidth / document.getElementById( "progressBar" ).parentElement.offsetWidth * 100 ) + 3 + "%";
 		                }
                     });
                 }
@@ -1274,14 +1311,29 @@
     <script>
         function isValidAddress( address ) {
             try{
-                return ( typeof( bitcoinjs.address.toOutputScript( address ) ) == "object" );
+                return ( typeof( bitcoinjs.address.toOutputScript( address, bitcoinjs.networks.testnet ) ) == "object" );
             } catch( e ) {
                 return false;
             }
         }
     </script>
 	<script>
-		async function prepCoinjoin( other_participants, toamount, toaddress ) {
+		async function prepCoinjoin( toamount, toaddress ) {
+			document.getElementById( "progress" ).style.display = "block";
+			var other_participants = [];
+			Object.keys( pool ).forEach( function( amount ) {
+				if ( toamount <= amount && other_participants.length < 10 ) {
+					pool[ amount ].forEach( function( joiner ) {
+						if ( other_participants.length < 10 ) {
+							other_participants.push( joiner[ "joiner" ] )
+						}
+					});
+				}
+			});
+			console.log( "other_participants:", other_participants );
+            //reaching out to other_participants.length other people...
+		    document.getElementById( "cj_status" ).innerText = `reaching out to ${other_participants.length} other people...`;
+			document.getElementById( "progressBar" ).style.width = "10%";
 			if ( !isValidAddress( toaddress ) ) {
 				toaddress = await getFirstUnusedAddress();
 			}
@@ -1303,11 +1355,13 @@
             message[ "msg_type" ] = "start_coinjoin";
             message[ "content" ] = JSON.stringify( participant );
             message = JSON.stringify( message );
-            var recipient = other_participants[ 0 ];
-            sendDM( message, recipient );
-            var recipient = other_participants[ 1 ];
-            sendDM( message, recipient );
+            other_participants.forEach( function( joiner ) {
+	            sendDM( message, joiner );
+            });
             var roster_is_full = await isRosterFullYet();
+            //all coinjoiners located...
+		    document.getElementById( "cj_status" ).innerText = `enough coinjoiners located...`;
+			document.getElementById( "progressBar" ).style.width = "50%";
             console.log( "roster is full, right?", roster_is_full );
             var participants = JSON.parse( sessionStorage[ "info_about_the_participants" ] );
             var coinjoin_inputs = [];
@@ -1340,9 +1394,13 @@
 			var utxos_in_this_transaction = [];
 	        var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
 	        var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
-		    var amount_plus_fee = toamount + ( 125 * coinjoin_inputs.length + 1 ) + ( 50 * coinjoin_outputs.length + 1 );
+		    var amount_plus_fee = toamount + ( ( 125 * coinjoin_inputs.length + 1 ) + ( 50 * coinjoin_outputs.length + 1 ) ) * sats_per_byte;
+            //creating coinjoin transaction...
+		    document.getElementById( "cj_status" ).innerText = `creating coinjoin transaction...`;
+			document.getElementById( "progressBar" ).style.width = "60%";
 	        var array = addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
-	        if ( array[ 0 ].length > 0 && array[ 1 ] && array[ 2 ] && array[ 3 ] && array[ 4 ] && array[ 5 ] ) {
+	        if ( !array ) return;
+	        if ( array[ 0 ] && array[ 0 ].length > 0 && array[ 1 ] && array[ 2 ] && array[ 3 ] && array[ 4 ] && array[ 5 ] ) {
 	                var adjusted_utxos_available_for_this_transaction = array[ 0 ];
 	                var adjusted_utxos_in_this_transaction = array[ 1 ];
 	                amount_plus_fee = array[ 2 ];
@@ -1381,16 +1439,22 @@
             var signed_cj = signCoinjoin( toamount, coinjoin_inputs, coinjoin_outputs );
             sessionStorage[ "sigs_info" ] = JSON.stringify( [signed_cj] );
             console.log( "here is the coinjoin psbt:", cj_psbt );
-            //todo: reestimate the transaction fee before sending the transaction out for signatures. I probably can't predict an exact fee since I don't know the sig lengths yet but if I do the estimate with an assumed max sig size of 74 bytes then I will be erring on the side of caution (but note that if there are 100 people and their sigs are on average 2 bytes shorter than my estimate then I am overpaying by 200 bytes multiplied by however many sats per byte I choose...which can result in quite a large surcharge, such as 6000 sats if I pay 60 sats per byte).
+            //asking everyone to sign...
+		    document.getElementById( "cj_status" ).innerText = `asking everyone to sign...`;
+			document.getElementById( "progressBar" ).style.width = "75%";
+            //todo: reestimate the transaction fee before sending the transaction out for signatures. I probably can't predict an exact fee since I don't know the sig lengths yet but if I do the estimate with an assumed max sig size of 74 bytes then I will be erring on the side of caution (but note that if there are 100 people and their sigs are on average 2 bytes shorter than my estimate then I am overpaying by 200 bytes multiplied by however many sats per byte I choose...which can result in quite a large surcharge, such as 6000 sats if I pay 30 sats per byte).
             var message = {}
             message[ "msg_type" ] = "sign_coinjoin";
             message[ "content" ] = cj_psbt;
             message = JSON.stringify( message );
-            var recipient = other_participants[ 0 ];
-            sendDM( message, recipient );
-            var recipient = other_participants[ 1 ];
-            sendDM( message, recipient );
+            other_participants.forEach( function( joiner ) {
+	            sendDM( message, joiner );
+            });
             var sigs_are_here = await didAllSignaturesArriveYet();
+            //everyone signed...
+		    document.getElementById( "cj_status" ).innerText = `everyone signed...`;
+			document.getElementById( "progressBar" ).style.width = "95%";
+			var timeout = await waitSomeSeconds( 2 );
             console.log( "the sigs are all here, right?", sigs_are_here );
             var signed_psbts = JSON.parse( sessionStorage[ "sigs_info" ] );
             var final_psbt = bitcoinjs.Psbt.fromHex( cj_psbt );
@@ -1401,17 +1465,52 @@
             		final_psbt.data.inputs[ index ][ "partialSig" ] = input[ "partialSig" ];
             	});
             });
+            final_psbt.finalizeAllInputs();
             final_psbt_hex = final_psbt.toHex();
             console.log( "final_psbt:", final_psbt_hex );
+            console.log( "final_txhex:", final_psbt.extractTransaction().toHex() );
+            sessionStorage.removeItem( "num_of_participants" );
+            sessionStorage.removeItem( "info_about_the_participants" );
+            sessionStorage.removeItem( "sigs_info" );
+            var tx = bitcoinjs.Transaction.fromHex( final_psbt.extractTransaction().toHex() );
+            console.log( `the transaction is this size (in bytes): ${tx.virtualSize()}`);
+            console.log( `the transaction fee is: ${final_psbt.getFee()} sats`);
+            var sat_or_sats = ( final_psbt.getFeeRate() == 1 ) ? "sat":"sats";
+            var conf = confirm( `This transaction will send ${toamount} sats to ${toaddress} through a coinjoin with ${other_participants.length + 1} people. The mining fee will cost ${final_psbt.getFee()} sats, which gives you a fee rate close to ${final_psbt.getFeeRate()} ${ sat_or_sats} per byte. (Note that it is hard to get a coinjoin's feerate to precisely match what you want. This should be close.) If you are okay with that, please click okay, otherwise you can cancel the payment.` );
+            if ( !conf ) {
+				document.getElementById( "progress" ).style.display = "none";
+				document.getElementById( "progressBar" ).style.width = "0%";
+            	return;
+            }
+			document.getElementById( "progress" ).style.display = "none";
+			document.getElementById( "progressBar" ).style.width = "0%";
+            var txid = await pushBTCpmt( final_psbt.extractTransaction().toHex() );
+            console.log( "Your transaction was broadcasted, your txid is: " + txid );
 		}
 	</script>
+	<script>
+		function waitSomeSeconds( num ) {
+          var num = num.toString() + "000";
+          num = Number( num );
+          return new Promise( function( resolve, reject ) {
+            setTimeout( function() { resolve( "" ); }, num );
+          });
+        }
+	</script>
     <script>
-		function startLoop() {
+		function startLoop( num ) {
 			startWallet();
 			checkHeartbeat();
-			setTimeout( function() {startLoop();}, 10000 );
+			if ( num == 30 ) {
+				if ( window.location.href.includes( "pool=true" ) ) {
+					swimInPool();
+				}
+				num = -1;
+			}
+			num = num + 1;
+			setTimeout( function() {startLoop( num );}, 10000 );
 		}
-		startLoop();
+		startLoop( 27 );
     </script>
 </body>
 </html>
