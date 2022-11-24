@@ -61,7 +61,15 @@
 				//note that the sum of all utxos added together should be greater than coinjoin_amount
 				//note also that change_amount, if it exists, should be the difference between coinjoin_amount and the sum of the utxos contributed by this participant
 		*/
+		function shuffleArray(array) {
+		    for (let i = array.length - 1; i > 0; i--) {
+		        const j = Math.floor(Math.random() * (i + 1));
+		        [array[i], array[j]] = [array[j], array[i]];
+		    }
+		}
         function startCoinjoin( amount, inputs, outputs ) {
+        	shuffleArray( inputs );
+        	shuffleArray( outputs );
             var psbt = new bitcoinjs.Psbt({network: bitcoinjs.networks.testnet});
             inputs.forEach( function( utxo ) {
                 psbt.addInput({
@@ -127,23 +135,54 @@
 		    });
             return psbt.toHex();
 		}
+		function amountIPutIn( psbt ) {
+			var amount_i_put_in = 0;
+		    psbt.txInputs.forEach( function( input, index ) {
+		        var input_hash = input[ "hash" ].toString( "hex" );
+		        input_hash = input_hash.match( /[a-fA-F0-9]{2}/g ).reverse().join( '' );
+		        var my_utxos = [];
+		        JSON.parse( sessionStorage.utxos ).forEach( function( address ) {
+		            address[ "utxos" ].forEach( function( utxo ) {
+		                my_utxos.push( [ utxo[ "tx_id" ], utxo[ "output_number" ], utxo[ "privkey" ], utxo[ "amount" ] ] );
+		            });
+		        });
+		        my_utxos.forEach( function( utxo ) {
+		            if ( input_hash == utxo[ 0 ] && input[ "index" ] == utxo[ 1 ] ) {
+		                amount_i_put_in = amount_i_put_in + utxo[ 3 ];
+		            }
+		        });
+		    });
+            return amount_i_put_in;
+		}
+		async function amountIGetOut( psbt ) {
+			var amount_i_get_out = 0;
+			var i; for ( i=0; i<psbt.txOutputs.length; i++ ) {
+		    	var firstaddy = await getFirstUnusedChangeAddress();
+		    	var secondaddy = await getSecondUnusedChangeAddress();
+		    	var myaddresses = [firstaddy, secondaddy];
+		    	if ( myaddresses.includes( psbt.txOutputs[ i ][ "address" ] ) ) {
+		    		amount_i_get_out = amount_i_get_out + psbt.txOutputs[ i ][ "value" ];
+		    	}
+		    }
+            return amount_i_get_out;
+		}
     </script>
     <script>
         function getIdFromPSBT( psbthex ) {
-            var psbt = bitcoinjs.Psbt.fromHex( psbthex );
+            var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
             return bitcoinjs.Transaction.fromHex( psbt.data.getTransaction().toString( "hex" ) ).getId();
         }
     </script>
     <script>
         function cosignFundingPSBT( psbthex, privkey, mynum ) {
-            var psbt = bitcoinjs.Psbt.fromHex( psbthex );
+            var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
             psbt.signInput( mynum, bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( privkey, "hex" ) ) );
             return psbt.toHex();
         }
     </script>
     <script>
         function finalizeFundingPSBT( psbthex ) {
-            var psbt = bitcoinjs.Psbt.fromHex( psbthex );
+            var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
             psbt.finalizeAllInputs();
             return psbt.extractTransaction().toHex();
         }
@@ -372,6 +411,21 @@
 		        }
 		}
 
+		async function getSecondUnusedChangeAddress() {
+		        var i; for ( i=0; i<100000; i++ ) {
+		                var backupwords = localStorage[ "backup_words" ];
+		                var path = "84'/0'/1'";
+		                var privkey = getPrivkeyHexFromPath( backupwords, path, i );
+		                var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+		                var hadMoney = await didThisAddressEverHaveMoney( address );
+		                if ( !hadMoney ) {
+				                var privkey2 = getPrivkeyHexFromPath( backupwords, path, i + 1 );
+				                var address2 = getNativeSegwitAddressFromPrivkeyHex( privkey2 );
+		                        return address2;
+		                }
+		        }
+		}
+
 		async function displayBalance() {
 		        await checkAddresses();
 		        var utxos = JSON.parse( sessionStorage[ "utxos" ] );
@@ -510,7 +564,9 @@
                 var change_amount = sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee;
                 var change_address = "";
                 if ( change_amount > 546 ) {
-                	change_address = await getFirstUnusedChangeAddress();
+                	change_address = await getSecondUnusedChangeAddress();
+                } else {
+                	console.log( `the change amount is only ${change_amount} sats so I will overlook it` );
                 }
                 var array = [utxos_in_this_transaction, change_amount, change_address];
                 return array;
@@ -572,8 +628,8 @@
                                 } else {
                                         console.log( "there is no change left over so I do not need a change output, yay!" );
                                 }
-                                if ( change_amount >= 250 ) {
-                                        console.log( "the change amount --", change_amount, "-- is equal to or more than the dust limit of this wallet, which is 250. (It used to be 250 + 50 * sats_per_byte i.e.", ( 250 + 50 * sats_per_byte ), "because I added some to the dust limit so that the change amount would not go lower than the dust limit once I add another output, but this caused problems and 250 is already a bit high anyway so I put it back to just 250.) So I have to redo steps 4-9. I used to use a new amount_plus_fee of the previous amount_plus_fee plus 50*sats_per_byte, i.e.", original_amount_plus_fee + 50*sats_per_byte, "because I figured the transaction size would have to rise by about 50 bytes, but it causes problems so now I am redoing it without changing anything. Also I have to remember to use the old values of utxos_available_for_this_transaction and utxos_in_this_transaction" );
+                                if ( change_amount >= 546 ) {
+                                        console.log( "the change amount --", change_amount, "-- is equal to or more than the dust limit of this wallet, which is 546. (It used to be 250 + 50 * sats_per_byte i.e.", ( 250 + 50 * sats_per_byte ), "because I added some to the dust limit so that the change amount would not go lower than the dust limit once I add another output, but this caused problems. Eventually I just set it to 546.) So I have to redo steps 4-9. I used to use a new amount_plus_fee of the previous amount_plus_fee plus 50*sats_per_byte, i.e.", original_amount_plus_fee + 50*sats_per_byte, "because I figured the transaction size would have to rise by about 50 bytes, but it causes problems so now I am redoing it without changing anything. Also I have to remember to use the old values of utxos_available_for_this_transaction and utxos_in_this_transaction" );
                                         var we_need_a_change_address = true;
 //                                      new_amount_plus_fee = original_amount_plus_fee + ( 50*sats_per_byte );
                                         new_amount_plus_fee = original_amount_plus_fee;
@@ -640,7 +696,7 @@
 		        }
 		        var adjusted_utxos_in_this_transaction = array[ 1 ];
 		        amount_plus_fee = array[ 2 ];
-		        if ( array[ 5 ] ) {
+		        if ( array[ 5 ] && array[ 3 ] && Number( array[ 3 ] ) > 546 ) {
 		                var change_amount = array[ 3 ];
 		                console.log( "change_amount", change_amount );
 		                var change_address = await getFirstUnusedChangeAddress();
@@ -668,7 +724,7 @@
 		        var new_adjusted_utxos_in_this_transaction = new_array[ 1 ];
 		        new_amount_plus_fee = new_array[ 2 ];
 		        var new_change_amount = new_array[ 3 ];
-		        if( Number( new_array[ 3 ] ) >= 250 && ( !change_address || change_address == "none" ) && new_array[ 5 ] ) {
+		        if( Number( new_array[ 3 ] ) >= 546 && ( !change_address || change_address == "none" ) && new_array[ 5 ] ) {
 		                var change_address = await getFirstUnusedChangeAddress();
 		        }
 		        var new_txhex = craftTransaction( new_adjusted_utxos_in_this_transaction, toamount, toaddress, change_address, new_change_amount, sats_per_byte );
@@ -952,6 +1008,9 @@
 				            pool[ key ] = amountpool;
 				        }
 				    });
+				    if ( pool[ key ].length == 0 ) {
+				    	delete pool[ key ];
+				    }
 				});
 				//add a new entry to the pool
             	if ( !pool[ content ] ) {
@@ -959,7 +1018,7 @@
 	            } else {
 	            	pool[ content ].push( {"joiner": event.pubkey, "timestamp": event.created_at} );
 	            }
-                console.log( pool );
+                console.log( Math.floor( Date.now() / 1000 ), pool );
             }
         }
     </script>
@@ -1126,7 +1185,7 @@
 		        var array = await contributeUtxosToCoinjoin( toamount, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
 		        var adjusted_utxos_in_this_transaction = array[ 0 ];
 		        console.log( "utxos I will contribute:", adjusted_utxos_in_this_transaction );
-		        var toaddress = await getFirstUnusedAddress();
+		        var toaddress = await getFirstUnusedChangeAddress();
 				var participant = {}
 	            participant[ "destination_address" ] = toaddress;
 	            var utxos = [];
@@ -1139,7 +1198,7 @@
 	            	utxos.push( pub_utxo );
 	            });
 	            participant[ "utxos" ] = utxos;
-		        if ( array[ 2 ] ) {
+		        if ( array[ 2 ] && array[ 1 ] > 546 ) {
 		        	participant[ "change_amount" ] = array[ 1 ];
 		        	participant[ "change_address" ] = array[ 2 ];
 		        }
@@ -1189,11 +1248,12 @@
             if ( message[ "msg_type" ] == "sign_coinjoin" ) {
                 console.log( "message from " + sender_pubkey + ": " + message[ "content" ] );
                 var it_was_a_duplicate = false;
-                //todo: check if the amount I put in is the amount I get out
-                var psbt = bitcoinjs.Psbt.fromHex( message[ "content" ] );
+                var psbt = bitcoinjs.Psbt.fromHex( message[ "content" ], {network: bitcoinjs.networks.testnet} );
+                var amount_i_put_in = amountIPutIn( psbt );
+                var amount_i_get_out = await amountIGetOut( psbt );
+                if ( isNaN( amount_i_get_out ) || isNaN( amount_i_put_in ) || amount_i_get_out < amount_i_put_in ) return;
 				var cosigned_coinjoin = cosignCoinjoin( psbt );
 	            var message = {}
-	            //message[ "msg_type" ] = "chat";
 	            message[ "msg_type" ] = "coinjoin_is_cosigned";
 	            message[ "content" ] = cosigned_coinjoin;
 	            message = JSON.stringify( message );
@@ -1208,7 +1268,7 @@
                     console.log( "sigs_info:", sigs_info );
                     var known_sigs = [];
                     sigs_info.forEach( function( psbthex ) {
-                    	psbt = bitcoinjs.Psbt.fromHex( psbthex );
+                    	psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
                     	psbt.data.inputs.forEach( function( input ) {
                     		if ( !input[ "partialSig" ] ) return;
                     		known_sigs.push( JSON.stringify( input[ "partialSig" ] ) );
@@ -1216,7 +1276,7 @@
                     });
                     console.log( "known_sigs:", known_sigs );
                     //todo: check if the psbt is valid, don't assume so
-                    var psbt = bitcoinjs.Psbt.fromHex( message[ "content" ] );
+                    var psbt = bitcoinjs.Psbt.fromHex( message[ "content" ], {network: bitcoinjs.networks.testnet} );
                     psbt.data.inputs.forEach( function( input ) {
 		                var it_was_a_duplicate = false;
                     	if ( !input[ "partialSig" ] ) {
@@ -1319,6 +1379,10 @@
     </script>
 	<script>
 		async function prepCoinjoin( toamount, toaddress ) {
+			if ( !isValidAddress( toaddress ) ) {
+				alert( "You entered an invalid address" );
+				return;
+			}
 			document.getElementById( "progress" ).style.display = "block";
 			var other_participants = [];
 			Object.keys( pool ).forEach( function( amount ) {
@@ -1334,9 +1398,6 @@
             //reaching out to other_participants.length other people...
 		    document.getElementById( "cj_status" ).innerText = `reaching out to ${other_participants.length} other people...`;
 			document.getElementById( "progressBar" ).style.width = "10%";
-			if ( !isValidAddress( toaddress ) ) {
-				toaddress = await getFirstUnusedAddress();
-			}
 			var sats_per_byte = Number( document.getElementById( "sats_per_byte" ).innerText );
             sessionStorage[ "num_of_participants" ] = other_participants.length + 1;
 			var participant = {}
@@ -1347,10 +1408,6 @@
             console.log( "participant:", participant );
             var info_about_the_participants = [];
             info_about_the_participants.push( participant );
-            //todo: I used to say I should do one or more rounds of random number generation to decide the order of participants,
-            //but today I figured out a better coordination scheme: instead of making everyone forward the transaction to the
-            //next signer, I can have them all sign their part at nce and send me back their sigs, then finalize the psbt. So now
-            //I only need to generate a random order once, and I don't need to coordinate with the other joiners to do that.
             var message = {}
             message[ "msg_type" ] = "start_coinjoin";
             message[ "content" ] = JSON.stringify( participant );
@@ -1372,19 +1429,19 @@
             	});
             });
             participants.forEach( function( participant ) {
-            	if ( participant[ "change_amount" ] ) {
+            	if ( participant[ "change_amount" ] && Number( participant[ "change_amount" ] ) > 546 ) {
 	            	var sum_of_this_participants_utxos = 0;
 	            	participant[ "utxos" ].forEach( function( utxo ) {
 	            		sum_of_this_participants_utxos = sum_of_this_participants_utxos + utxo[ "amount" ];
 	            	});
 	            	var real_change = sum_of_this_participants_utxos - toamount;
-	            	if ( real_change != participant[ "change_amount" ] ) {
-	            		alert( `Scammer! True change due: ${real_change} Desired change due: ${participant[ "change_amount" ]}` );
+	            	if ( real_change != Number( participant[ "change_amount" ] ) ) {
+	            		alert( `Scammer! True change due: ${real_change} Desired change due: ${Number( participant[ "change_amount" ] )}` );
 	            		return;
 	            	}
 	            }
             	coinjoin_outputs.push( [ participant[ "destination_address" ], toamount ] );
-            	if ( participant[ "change_address" ] && participant[ "change_amount" ] ) {
+            	if ( participant[ "change_address" ] && Number( participant[ "change_amount" ] ) ) {
             		coinjoin_outputs.push( [ participant[ "change_address" ], real_change ] );
             	}
             });
@@ -1411,7 +1468,7 @@
 	        }
 	        var adjusted_utxos_in_this_transaction = array[ 1 ];
 	        amount_plus_fee = array[ 2 ];
-	        if ( array[ 5 ] ) {
+	        if ( array[ 5 ] && array[ 3 ] && Number( array[ 3 ] ) > 546 ) {
 	                var change_amount = array[ 3 ];
 	                console.log( "change_amount", change_amount );
 	                var change_address = await getFirstUnusedChangeAddress();
@@ -1457,9 +1514,9 @@
 			var timeout = await waitSomeSeconds( 2 );
             console.log( "the sigs are all here, right?", sigs_are_here );
             var signed_psbts = JSON.parse( sessionStorage[ "sigs_info" ] );
-            var final_psbt = bitcoinjs.Psbt.fromHex( cj_psbt );
+            var final_psbt = bitcoinjs.Psbt.fromHex( cj_psbt, {network: bitcoinjs.networks.testnet} );
             signed_psbts.forEach( function( psbthex ) {
-            	var psbt = bitcoinjs.Psbt.fromHex( psbthex );
+            	var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
             	psbt.data.inputs.forEach( function( input, index ) {
             		if ( !input[ "partialSig" ] ) return;
             		final_psbt.data.inputs[ index ][ "partialSig" ] = input[ "partialSig" ];
