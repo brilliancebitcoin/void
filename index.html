@@ -1068,7 +1068,7 @@
         var nostr_pubKey  = nostr_keypair.publicKey.toString( "hex" )
         nostr_pubKey      = nostr_pubKey.substring( 2 )
         console.log( "nostr_pubKey:", nostr_pubKey );
-        var relay = "wss://relay.damus.io";
+        var relay = "wss://nostr-pub.wellorder.net";
         var socket = new WebSocket( relay );
         socket.addEventListener('message', handleMessage );
         var subId   = bitcoinjs.ECPair.makeRandom().privateKey.toString( "hex" )
@@ -1412,9 +1412,11 @@
             message[ "msg_type" ] = "start_coinjoin";
             message[ "content" ] = JSON.stringify( participant );
             message = JSON.stringify( message );
-            other_participants.forEach( function( joiner ) {
-	            sendDM( message, joiner );
-            });
+            var i; for ( i=0; i<other_participants.length; i++ ) {
+            	console.log( "sending a message to:", other_participants[ i ] );
+	            sendDM( message, other_participants[ i ] );
+	            var timeout = await waitSomeSeconds( 2 );
+        	}
             var roster_is_full = await isRosterFullYet();
             //all coinjoiners located...
 		    document.getElementById( "cj_status" ).innerText = `enough coinjoiners located...`;
@@ -1504,9 +1506,9 @@
             message[ "msg_type" ] = "sign_coinjoin";
             message[ "content" ] = cj_psbt;
             message = JSON.stringify( message );
-            other_participants.forEach( function( joiner ) {
-	            sendDM( message, joiner );
-            });
+            var i; for ( i=0; i<other_participants.length; i++ ) {
+	            sendDM( message, other_participants[ i ] );
+            }
             var sigs_are_here = await didAllSignaturesArriveYet();
             //everyone signed...
 		    document.getElementById( "cj_status" ).innerText = `everyone signed...`;
