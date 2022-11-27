@@ -3,85 +3,93 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, user-scalable=no" />
-    <style>
-        * {
-            box-sizing: border-box;
-            font-size: 1.15rem;
-            font-family: Arial, sans-serif;
-        }
-        html {
-            max-width: 70ch;
-            padding: 3rem 1rem;
-            margin: auto;
-            line-height: 1.25;
-            background-color: black;
-        }
-        h1 {
-            font-size: 2rem;
-            color: white;
-        }
-        h2 {
-            font-size: 1.5rem;
-        }
-        html {
-            height: 100%;
-        }
-        body {
-            height: 100%;
-        }
-        .start, .home {
-            position: relative;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100%;
-            background-image: url( 'red-circle.gif' );
-            background-size: contain;
-            background-repeat: no-repeat;
-            background-position: 50% 50%;
-        }
-        .start *, .home * {
-            height: min-content;
-        }
-        .row {
-            text-align: center;
-        }
-        button {
-            border: 3px solid red;
-            background-color: orange;
-            padding: .6rem 40%;
-            border-radius: 10px;
-            cursor: pointer;
-        }
-        .home {
-            display: none;
-        }
-        span {
-            font-size: inherit;
-        }
-        .flex-row {
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            position: absolute;
-            bottom: 10px;
-        }
-        .send-btn, .txs-btn, .receive-btn {
-            width: 8rem;
-            padding: .5rem;
-        }
-        .settings {
-            position: absolute;
-            top: -20px;
-            right: 10px;
-            font-size: 2rem;
-        }
-        @media only screen and ( min-width: 600px ) {
-            html {
-                border: 1px solid white;
+        <style>
+            * {
+                box-sizing: border-box;
+                font-size: 1.15rem;
+                font-family: Arial, sans-serif;
             }
-        }
-    </style>
+            html {
+                max-width: 70ch;
+                padding: 3rem 1rem;
+                margin: auto;
+                line-height: 1.25;
+                background-color: black;
+            }
+            h1 {
+                font-size: 2rem;
+                color: white;
+            }
+            h2 {
+                font-size: 1.5rem;
+            }
+            html {
+                height: 100%;
+            }
+            body {
+                height: 100%;
+            }
+            .start, .home {
+                position: relative;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100%;
+                background-image: url( 'red-circle.gif' );
+                background-size: contain;
+                background-repeat: no-repeat;
+                background-position: 50% 50%;
+            }
+            .start *, .home * {
+                height: min-content;
+            }
+            .row {
+                text-align: center;
+            }
+            button {
+                border: 3px solid red;
+                background-color: orange;
+                padding: .6rem 40%;
+                border-radius: 10px;
+                cursor: pointer;
+            }
+            .home {
+                display: none;
+            }
+            span {
+                font-size: inherit;
+            }
+            .flex-row {
+                width: 100%;
+                display: flex;
+                justify-content: space-between;
+                position: absolute;
+                bottom: 10px;
+            }
+            .send-btn, .txs-btn, .receive-btn {
+                width: 8rem;
+                padding: .5rem;
+            }
+            .txs-btn {
+                color: white;
+                background-color: transparent;
+                border: 1px solid white;
+                width: min-content;
+                padding: 0px 9px;
+                border-radius: 50%;
+            }
+            .settings {
+                position: absolute;
+                top: -20px;
+                right: 10px;
+                font-size: 2rem;
+            }
+            @media only screen and ( min-width: 600px ) {
+                html {
+                    border: 1px solid white;
+                }
+            }
+        </style>
     </head>
     <body>
         <div class="start">
@@ -95,11 +103,11 @@
         <div class="home">
             <div class="settings">⚙️</div>
             <div class="row">
-                <h1><span class="balance">100</span><br>sats</h1>
+                <h1 class="balance-changer sats" onclick="changeDenomination();"><span class="balance">100</span><br>sats</h1>
             </div>
             <div class="flex-row">
                 <button class="send-btn">Send</button>
-                <button class="txs-btn">History</button>
+                <button class="txs-btn">&#11165;</button>
                 <button class="receive-btn">Receive</button>
             </div>
         </div>
@@ -110,6 +118,16 @@
         function start() {
             $( '.start' ).style.display = "none";
             $( '.home' ).style.display = "flex";
+        }
+        function changeDenomination() {
+            if ( $( '.balance-changer' ).classList.contains( "sats" ) ) {
+                $( '.balance-changer' ).innerHTML = `<span class="balance">200</span><br>dollars`;
+                $( '.balance-changer' ).classList.remove( "sats" );
+                setTimeout( function() {
+                    $( '.balance-changer' ).innerHTML = `<span class="balance">100</span><br>sats`;
+                    $( '.balance-changer' ).classList.add( "sats" );
+                }, 2000 );
+            }
         }
     </script>
 </html>
