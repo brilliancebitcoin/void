@@ -64,19 +64,24 @@
                 display: flex;
                 justify-content: space-between;
                 position: absolute;
-                bottom: 10px;
+                bottom: 0px;
             }
             .send-btn, .txs-btn, .receive-btn {
                 width: 8rem;
                 padding: .5rem;
+                margin: 1rem;
             }
             .txs-btn {
                 color: white;
                 background-color: transparent;
                 border: 1px solid white;
-                width: min-content;
-                padding: 0px 9px;
+                width: 2rem;
+                height: 2rem;
                 border-radius: 50%;
+                font-size: 1rem;
+                line-height: 1rem;
+                position: relative;
+                top: .4rem;
             }
             .settings {
                 position: absolute;
@@ -96,14 +101,14 @@
             <div class="row">
                 <h1>void wallet</h1>
                 <p>
-                    <button onclick='start();'>Start</button>
+                    <button class="start-btn">Start</button>
                 </p>
             </div>
         </div>
         <div class="home">
             <div class="settings">⚙️</div>
             <div class="row">
-                <h1 class="balance-changer sats" onclick="changeDenomination();"><span class="balance">100</span><br>sats</h1>
+                <h1 class="balance-changer sats"><span class="balance">18500</span><br>sats</h1>
             </div>
             <div class="flex-row">
                 <button class="send-btn">Send</button>
@@ -115,19 +120,50 @@
     <script>
         var $ = document.querySelector.bind( document );
         var $$ = document.querySelectorAll.bind( document );
+        $( '.start-btn' ).onclick = function() {start();}
+        $( '.balance-changer' ).onclick = function() {changeDenomination( $( '.balance' ).innerText );}
         function start() {
             $( '.start' ).style.display = "none";
             $( '.home' ).style.display = "flex";
         }
-        function changeDenomination() {
+        async function changeDenomination( sats ) {
+            sats = Number( sats );
+            var bucks = await satsToDollars( sats );
+            bucks = Math.round( bucks * 100 ) / 100;
             if ( $( '.balance-changer' ).classList.contains( "sats" ) ) {
-                $( '.balance-changer' ).innerHTML = `<span class="balance">200</span><br>dollars`;
+                $( '.balance-changer' ).innerHTML = `<span>${bucks}</span><br>dollars`;
                 $( '.balance-changer' ).classList.remove( "sats" );
                 setTimeout( function() {
-                    $( '.balance-changer' ).innerHTML = `<span class="balance">100</span><br>sats`;
+                    $( '.balance-changer' ).innerHTML = `<span class="balance">${sats}</span><br>sats`;
                     $( '.balance-changer' ).classList.add( "sats" );
                 }, 2000 );
             }
+        }
+        function getData( url ) {
+            return new Promise( function( resolve, reject ) {
+                var xhttp = new XMLHttpRequest();
+                xhttp.onreadystatechange = function() {
+                    if ( this.readyState == 4 && ( this.status >= 200 && this.status < 300 ) ) {
+                        resolve( xhttp.responseText );
+                    };
+                }
+                xhttp.open( "GET", url, true );
+                xhttp.send();
+            });
+        }
+        async function getBitcoinPrice() {
+            var data = await getData( "https://api.coinbase.com/v2/prices/BTC-USD/spot" );
+            var json = JSON.parse( data );
+            var price = json[ "data" ][ "amount" ];
+            return price;
+        }
+        function satsToBitcoin( sats ) {
+            return "0." + String( sats ).padStart( 8, "0" );
+        }
+        async function satsToDollars( sats ) {
+            var bitcoin_price = await getBitcoinPrice();
+            var value_in_dollars = satsToBitcoin( sats ) * bitcoin_price;
+            return value_in_dollars;
         }
     </script>
 </html>
