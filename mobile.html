@@ -11,7 +11,6 @@
             }
             html {
                 max-width: 70ch;
-                padding: 3rem 1rem;
                 margin: auto;
                 line-height: 1.25;
                 background-color: black;
@@ -25,9 +24,43 @@
             }
             html {
                 height: 100%;
+                padding: 0px;
             }
             body {
+                padding: 3rem 1rem;
+                margin: 0px;
                 height: 100%;
+            }
+            .banner {
+                display: none;
+                width: 100%;
+                position: absolute;
+                top: 0px;
+                left: 0px;
+                color: white;
+                text-align: center;
+                background-color: red;
+                margin: 0px;
+                padding: 10px;
+                cursor: pointer;
+            }
+            .inner-banner {
+                display: flex;
+                position: relative;
+                align-items: center;
+                height: 50px;
+            }
+            .banner-words {
+                float: left;
+                width: 90%;
+            }
+            .banner-x {
+                height: 100%;
+                float: right;
+                width: 10%;
+                line-height: 50px;
+                font-weight: bold;
+                font-size: 1.5rem;
             }
             .start, .home {
                 position: relative;
@@ -95,18 +128,31 @@
                 top: -20px;
                 right: 10px;
                 font-size: 2rem;
+                cursor: pointer;
             }
             @media only screen and ( min-width: 600px ) {
-                html {
-                    border: 1px solid white;
+                body {
+                    border-left: 1px solid white;
+                    border-right: 1px solid white;
+                    position: relative;
                 }
             }
         </style>
     </head>
     <body>
+        <div class="banner">
+            <div class="inner-banner">
+                <div class="banner-words">
+                    Write down your backup words or lose your money
+                </div>
+                <div class="banner-x">
+                    &times;
+                </div>
+            </div>
+        </div>
         <div class="start">
             <div class="row splash-screen">
-                <h1>void</h1>
+                <h1>void wallet</h1>
                 <p>
                     <button class="start-btn">Start</button>
                 </p>
@@ -125,13 +171,23 @@
         </div>
     </body>
     <script>
+        sessionStorage.clear();
         var $ = document.querySelector.bind( document );
         var $$ = document.querySelectorAll.bind( document );
         $( '.start-btn' ).onclick = function() {start();}
+        $( '.banner-x' ).onclick = function() {
+            sessionStorage[ "backed-up" ] = true;
+            $( '.banner' ).style.display = "none";
+            $( '.settings' ).style.display = "flex";
+        }
         $( '.balance-changer' ).onclick = function() {changeDenomination( $( '.balance' ).innerText );}
         function start() {
             $( '.start' ).style.display = "none";
             $( '.home' ).style.display = "flex";
+            if ( !sessionStorage[ "backed-up" ] ) {
+                $( '.banner' ).style.display = "block";
+                $( '.settings' ).style.display = "none";
+            }
         }
         async function changeDenomination( sats ) {
             sats = Number( sats );
