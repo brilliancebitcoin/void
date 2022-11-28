@@ -982,6 +982,7 @@
             <div class="settings-flex-row">
                 <button class="home-btn">Home</button>
             </div>
+            <div style="clear: all; height: 5rem;"></div>
         </div>
     </body>
     <script>
@@ -1007,10 +1008,12 @@
             $( '.banner' ).style.display = "none";
             $( '.home' ).style.display = "none";
             $( '.settings_page' ).style.display = "flex";
+            $( 'body' ).style.height = "auto";
         }
         $( '.settings' ).onclick = function() {
             $( '.home' ).style.display = "none";
             $( '.settings_page' ).style.display = "flex";
+            $( 'body' ).style.height = "auto";
         }
         $( '.balance-changer' ).onclick = function() {changeDenomination( $( '.balance' ).innerText );}
         $( '.import-privkeys' ).onclick = function() {
@@ -1032,6 +1035,7 @@
             $( '.start' ).style.display = "none";
             $( '.settings_page' ).style.display = "none";
             $( '.home' ).style.display = "flex";
+            $( 'body' ).style.height = "100%";
             if ( !sessionStorage[ "backed-up" ] ) {
                 $( '.banner' ).style.display = "block";
                 $( '.settings' ).style.display = "none";
