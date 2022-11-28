@@ -3,33 +3,801 @@
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, user-scalable=no" />
+        <script src="https://supertestnet.github.io/bitcoin-chess/js/qrcode.js"></script>
+        <script src="https://bitcoincore.tech/apps/bitcoinjs-ui/lib/bitcoinjs-lib.js"></script>
+        <script src="https://bundle.run/noble-secp256k1@1.2.14"></script>
+        <script src="https://bundle.run/bip39@3.0.4"></script>
+        <script src="https://bundle.run/bip32@2.0.6"></script>
+        <script src="https://bundle.run/buffer@6.0.3"></script>
+        <script src="https://bundle.run/browserify-cipher@1.0.1"></script>
+        <script>
+            function computeRawPrivkey( node ) {
+                return bitcoinjs.ECPair.fromPrivateKey( node.privateKey, { network: bitcoinjs.networks.testnet } ).__D.toString( "hex" );
+            }
+
+            function getNativeSegwitAddressFromPrivkeyHex( privkeyhex ) {
+                return bitcoinjs.payments.p2wpkh({ pubkey: bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( privkeyhex, "hex" ), { network: bitcoinjs.networks.testnet } ).publicKey, network: bitcoinjs.networks.testnet }).address;
+            }
+
+            function getPrivkeyHexFromPath( backupwords, path, index ) {
+                //standard segwit path is m/84'/0'/0'/0 so “path” should be 84'/0'/0' and “index” 0
+                var seed = bip39.mnemonicToSeedSync( backupwords );
+                var node = bip32.fromSeed( seed );
+                var path = "m/" + path + "/" + index;
+                var root = node;
+                var child = root.derivePath( path );
+                return computeRawPrivkey( child );
+            }
+
+            function getAddressFromPath( backupwords, path, index ) {
+                var privkey = getPrivkeyHexFromPath( backupwords, path, index );
+                var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                return address;
+            }
+            function shuffleArray(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+            }
+            function startCoinjoin( amount, inputs, outputs ) {
+                shuffleArray( inputs );
+                shuffleArray( outputs );
+                var psbt = new bitcoinjs.Psbt({network: bitcoinjs.networks.testnet});
+                inputs.forEach( function( utxo ) {
+                    psbt.addInput({
+                        hash: utxo[ "tx_id" ],
+                        index: utxo[ "output_number" ],
+                        witnessUtxo: {
+                            script: buffer.Buffer.from( '0014' +
+                                bitcoinjs.crypto.hash160( buffer.Buffer.from( utxo[ "pubkey" ], "hex" ) ).toString( "hex" ), "hex" ),
+                            value: utxo[ "amount" ]
+                        },
+                    });
+                });
+                outputs.forEach( function( output ) {
+                    psbt.addOutput({
+                        address: output[ 0 ],
+                        value: output[ 1 ],
+                    });
+                });
+                return psbt.toHex();
+            }
+            function signCoinjoin( amount, inputs, outputs ) {
+                var psbt = new bitcoinjs.Psbt({network: bitcoinjs.networks.testnet});
+                inputs.forEach( function( utxo ) {
+                    psbt.addInput({
+                        hash: utxo[ "tx_id" ],
+                        index: utxo[ "output_number" ],
+                        witnessUtxo: {
+                            script: buffer.Buffer.from( '0014' +
+                                bitcoinjs.crypto.hash160( buffer.Buffer.from( utxo[ "pubkey" ], "hex" ) ).toString( "hex" ), "hex" ),
+                            value: utxo[ "amount" ]
+                        },
+                    });
+                });
+                outputs.forEach( function( output ) {
+                    psbt.addOutput({
+                        address: output[ 0 ],
+                        value: output[ 1 ],
+                    });
+                });
+                inputs.forEach( function( input, index ) {
+                    if ( input[ "privkey" ] ) {
+                        psbt.signInput( index, bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( input[ "privkey" ], "hex" ) ) );
+                    }
+                });
+                return psbt.toHex();
+            }
+            function cosignCoinjoin( psbt ) {
+                psbt.txInputs.forEach( function( input, index ) {
+                    var input_hash = input[ "hash" ].toString( "hex" );
+                    input_hash = input_hash.match( /[a-fA-F0-9]{2}/g ).reverse().join( '' );
+                    var my_utxos = [];
+                    JSON.parse( sessionStorage.utxos ).forEach( function( address ) {
+                        address[ "utxos" ].forEach( function( utxo ) {
+                            my_utxos.push( [ utxo[ "tx_id" ], utxo[ "output_number" ], utxo[ "privkey" ] ] );
+                        });
+                    });
+                    my_utxos.forEach( function( utxo ) {
+                        if ( input_hash == utxo[ 0 ] && input[ "index" ] == utxo[ 1 ] ) {
+                            psbt.signInput( index, bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( utxo[ 2 ], "hex" ) ) );
+                            console.log( "signature:", psbt.data.inputs[ index ][ "partialSig" ][ 0 ][ "signature" ].toString( "hex" ) );
+                        }
+                    });
+                });
+                return psbt.toHex();
+            }
+            function amountIPutIn( psbt ) {
+                var amount_i_put_in = 0;
+                psbt.txInputs.forEach( function( input, index ) {
+                    var input_hash = input[ "hash" ].toString( "hex" );
+                    input_hash = input_hash.match( /[a-fA-F0-9]{2}/g ).reverse().join( '' );
+                    var my_utxos = [];
+                    JSON.parse( sessionStorage.utxos ).forEach( function( address ) {
+                        address[ "utxos" ].forEach( function( utxo ) {
+                            my_utxos.push( [ utxo[ "tx_id" ], utxo[ "output_number" ], utxo[ "privkey" ], utxo[ "amount" ] ] );
+                        });
+                    });
+                    my_utxos.forEach( function( utxo ) {
+                        if ( input_hash == utxo[ 0 ] && input[ "index" ] == utxo[ 1 ] ) {
+                            amount_i_put_in = amount_i_put_in + utxo[ 3 ];
+                        }
+                    });
+                });
+                return amount_i_put_in;
+            }
+            async function amountIGetOut( psbt ) {
+                var amount_i_get_out = 0;
+                var i; for ( i=0; i<psbt.txOutputs.length; i++ ) {
+                    var firstaddy = await getFirstUnusedChangeAddress();
+                    var secondaddy = await getSecondUnusedChangeAddress();
+                    var myaddresses = [firstaddy, secondaddy];
+                    if ( myaddresses.includes( psbt.txOutputs[ i ][ "address" ] ) ) {
+                        amount_i_get_out = amount_i_get_out + psbt.txOutputs[ i ][ "value" ];
+                    }
+                }
+                return amount_i_get_out;
+            }
+            function getIdFromPSBT( psbthex ) {
+                var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
+                return bitcoinjs.Transaction.fromHex( psbt.data.getTransaction().toString( "hex" ) ).getId();
+            }
+            function cosignFundingPSBT( psbthex, privkey, mynum ) {
+                var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
+                psbt.signInput( mynum, bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( privkey, "hex" ) ) );
+                return psbt.toHex();
+            }
+            function finalizeFundingPSBT( psbthex ) {
+                var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
+                psbt.finalizeAllInputs();
+                return psbt.extractTransaction().toHex();
+            }
+            function getTransactionsInvolvingAddress( address ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && ( this.status > 199 && this.status < 300 ) ) {
+                            var json = JSON.parse( xhttp.responseText );
+                            var txs = [];
+                            var i; for ( i=0; i<json.length; i++ ) {
+                                txs.push( json[ i ][ "txid" ] );
+                            }
+                            resolve( JSON.stringify( txs ) );
+                        }
+                    };
+                    xhttp.open("GET", "https://mempool.space/testnet/api/address/" + address + "/txs", true);
+                    xhttp.send();
+                });                
+            }
+            function getAddressBalance( address ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && this.status == 200 ) {
+                            var json = JSON.parse( xhttp.responseText );
+                            var fullincome = json[ "chain_stats" ][ "funded_txo_sum" ] + json[ "mempool_stats" ][ "funded_txo_sum" ];
+                            var fulloutgo = json[ "chain_stats" ][ "spent_txo_sum" ] + json[ "mempool_stats" ][ "spent_txo_sum" ];
+                            resolve( fullincome - fulloutgo );
+                        };
+                    }
+                    xhttp.open( "GET", "https://mempool.space/testnet/api/address/" + address, true );
+                    xhttp.send();
+                });
+            }
+
+            function getTransactionObjectViaTxid( txid ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && this.status == 200 ) {
+                            var tx = JSON.parse( xhttp.responseText );
+                            resolve( tx );
+                        };
+                    }
+                    xhttp.open( "GET", "https://mempool.space/testnet/api/tx/" + txid, true );
+                    xhttp.send();
+                });
+            }
+
+            function getCompressedPubkeyHexFromPrivkeyHex( privkeyhex ) {
+                return bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( privkeyhex, "hex" ), { network: bitcoinjs.networks.testnet } ).publicKey.toString( "hex" );
+            }
+
+            function txIsACoinjoin( tx ) {
+                if ( tx[ "vin" ].length < 3 || tx[ "vout" ].length < 3 ) return;
+                if ( tx[ "vin" ].length / tx[ "vout" ].length < 0.67 ) return;
+                var output_values = [];
+                tx[ "vout" ].forEach( function( output ) {
+                    if ( !( output.value in output_values ) ) {
+                        output_values[ output.value ] = 0;
+                    } else {
+                        output_values[ output.value ] = output_values[ output.value ] + 1;
+                    }
+                });
+                if ( Object.keys( output_values ).length <= tx[ "vout" ].length - 2 ) return true;
+                return false;
+            }
+
+            function getCoinjoinValue( tx ) {
+                var output_values = {}
+                var highest_num = 0;
+                var cj_value = 0;
+                tx[ "vout" ].forEach( function( output ) {
+                    if ( !( output.value in output_values ) ) {
+                        output_values[ output.value ] = 0;
+                    } else {
+                        output_values[ output.value ] = output_values[ output.value ] + 1;
+                    }
+                });
+                Object.keys( output_values ).forEach( function( key ) {
+                    if ( output_values[ key ] <= highest_num ) return;
+                    highest_num = output_values[ key ];
+                    cj_value = Number( key );
+                });
+                return cj_value;
+            }
+
+            async function getUTXOs( privkey ) {
+                var pubkey = getCompressedPubkeyHexFromPrivkeyHex( privkey );
+                var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && this.status == 200 ) {
+                            var obj = {}
+                            obj[ "address" ] = address;
+                            obj[ "utxos" ] = [];
+                            var esplorautxos = JSON.parse( xhttp.responseText );
+                            esplorautxos.forEach( async function( item, index ) {
+                                var tx = await getTransactionObjectViaTxid( item[ "txid" ] );
+                                //if ( !txIsACoinjoin( tx ) ) return;
+                                var coinjoin_value = getCoinjoinValue( tx );
+                                //if ( item[ "value" ] != coinjoin_value ) return;
+                                //if ( item[ "value" ] == coinjoin_value ) console.log( `I am adding to my balance one or more outputs of this value: ${coinjoin_value} from this tx: ${item[ "txid" ]}` );
+                                var utxo = {}
+                                utxo[ "tx_id" ] = item[ "txid" ];
+                                utxo[ "output_number" ] = item[ "vout" ];
+                                utxo[ "amount" ] = item[ "value" ];
+                                utxo[ "privkey" ] = privkey;
+                                utxo[ "pubkey" ] = pubkey;
+                                obj[ "utxos" ].push( utxo );
+                            });
+                            resolve( obj );
+                        }
+                    }
+                    xhttp.open( "GET", "https://mempool.space/testnet/api/address/" + address + "/utxo", true );
+                    xhttp.send();
+                });
+            }
+
+            async function getAvailableUtxosFromReceivePath() {
+                return new Promise( async function( resolve, reject ) {
+                    var available_utxos = [];
+                    var i1 = 0;
+                    var i2 = 0;
+                    var i; for ( i=0; i<100000; i++ ) {
+                        if ( i2 > 20 ) {
+                                break;
+                        }
+                        var backupwords = localStorage[ "backup_words" ];
+                        var path = "84'/0'/0'";
+                        var privkey = getPrivkeyHexFromPath( backupwords, path, i1 + i2 );
+                        var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                        var balance = await getAddressBalance( address );
+                        if ( balance < 1 ) {
+                            i2 = Number( i2 ) + 1;
+                        } else {
+                            i1 = Number( i1 ) + 1;
+                            var utxos_in_this_address = await getUTXOs( privkey );
+                            available_utxos.push( utxos_in_this_address );
+                        }
+                    }
+                    resolve( available_utxos );
+                });
+            }
+
+            async function getAvailableUtxosFromChangePath() {
+                return new Promise( async function( resolve, reject ) {
+                    var available_utxos = [];
+                    var i1 = 0;
+                    var i2 = 0;
+                    var i; for ( i=0; i<100000; i++ ) {
+                        if ( i2 > 20 ) {
+                            break;
+                        }
+                        var backupwords = localStorage[ "backup_words" ];
+                        var path = "84'/0'/1'";
+                        var privkey = getPrivkeyHexFromPath( backupwords, path, i1 + i2 );
+                        var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                        var balance = await getAddressBalance( address );
+                        if ( balance < 1 ) {
+                            i2 = Number( i2 ) + 1;
+                        } else {
+                            i1 = Number( i1 ) + 1;
+                            var utxos_in_this_address = await getUTXOs( privkey );
+                            available_utxos.push( utxos_in_this_address );
+                        }
+                    }
+                    resolve( available_utxos );
+                });
+            }
+
+            async function checkAddresses() {
+                var available_utxos_1 = await getAvailableUtxosFromReceivePath();
+                var available_utxos_2 = await getAvailableUtxosFromChangePath();
+                available_utxos_2.forEach( function( item ) {
+                    available_utxos_1.push( item );
+                });
+                sessionStorage[ "utxos" ] = JSON.stringify( available_utxos_1 );
+            }
+
+            function didThisAddressEverHaveMoney( address ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && this.status == 200 ) {
+                            var json = JSON.parse( xhttp.responseText );
+                            if ( json[ "chain_stats" ][ "funded_txo_count" ] > 0 || json[ "mempool_stats" ][ "funded_txo_count" ] > 0 ) {
+                                resolve( true );
+                            }
+                            resolve( false );
+                        }
+                    };
+                    xhttp.open( "GET", "https://mempool.space/testnet/api/address/" + address, true );
+                    xhttp.send();
+                });
+            }
+
+            async function getFirstUnusedAddress() {
+                var i; for ( i=0; i<100000; i++ ) {
+                    var backupwords = localStorage[ "backup_words" ];
+                    var path = "84'/0'/0'";
+                    var privkey = getPrivkeyHexFromPath( backupwords, path, i );
+                    var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                    var hadMoney = await didThisAddressEverHaveMoney( address );
+                    if ( !hadMoney ) {
+                        return address;
+                    }
+                }
+            }
+
+            async function getFirstUnusedChangeAddress() {
+                var i; for ( i=0; i<100000; i++ ) {
+                    var backupwords = localStorage[ "backup_words" ];
+                    var path = "84'/0'/1'";
+                    var privkey = getPrivkeyHexFromPath( backupwords, path, i );
+                    var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                    var hadMoney = await didThisAddressEverHaveMoney( address );
+                    if ( !hadMoney ) {
+                        return address;
+                    }
+                }
+            }
+
+            async function getSecondUnusedChangeAddress() {
+                var i; for ( i=0; i<100000; i++ ) {
+                    var backupwords = localStorage[ "backup_words" ];
+                    var path = "84'/0'/1'";
+                    var privkey = getPrivkeyHexFromPath( backupwords, path, i );
+                    var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                    var hadMoney = await didThisAddressEverHaveMoney( address );
+                    if ( !hadMoney ) {
+                        var privkey2 = getPrivkeyHexFromPath( backupwords, path, i + 1 );
+                        var address2 = getNativeSegwitAddressFromPrivkeyHex( privkey2 );
+                        return address2;
+                    }
+                }
+            }
+
+            async function displayBalance() {
+                await checkAddresses();
+                var utxos = JSON.parse( sessionStorage[ "utxos" ] );
+                var balance = 0;
+                alt_utxo_list = [];
+                utxos.forEach( function( item ) {
+                    var i; for ( i=0; i<item[ "utxos" ].length; i++ ) {
+                        balance = balance + Number( item[ "utxos" ][ i ][ "amount" ] );
+                        alt_utxo_list.push( item[ "utxos" ][ i ] );
+                    }
+                });
+                sessionStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
+                return Number( balance ).toString();
+            }
+
+            function pushBTCpmt( rawtx ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && ( this.status > 199 && this.status < 300 ) ) {
+                            var response = this.responseText;
+                            resolve( response );
+                        }
+                    };
+                    xhttp.open( "POST", "https://mempool.space/testnet/api/tx", true );
+                    xhttp.send( rawtx );
+                });
+            }
+
+            function craftTransaction( selected_utxos, to_amount, to_address, change_address, change_amount, sats_per_byte ) {
+                if ( !to_amount ) {
+                    return;
+                }
+                if ( change_amount != 0 && change_address != "none" ) {
+                    var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet });
+                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
+                       psbt.addInput({
+                            hash: selected_utxos[ i ][ "tx_id" ],
+                            index: selected_utxos[ i ][ "output_number" ],
+                            witnessUtxo: {
+                                script: buffer.Buffer.from( '0014' + bitcoinjs.crypto.ripemd160( bitcoinjs.crypto.sha256( buffer.Buffer.from( selected_utxos[ i ][ "pubkey" ], "hex" ) ) ).toString( 'hex' ), 'hex' ),
+                                value: selected_utxos[ i ][ "amount" ],
+                            },
+                       });
+                    }
+                    psbt.addOutput({
+                        address: to_address,
+                        value: to_amount,
+                    });
+                    psbt.addOutput({
+                        address: change_address,
+                        value: change_amount,
+                    });
+                    var keyPairSenders = [];
+                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
+                        keyPairSenders.push( bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( selected_utxos[ i ][ "privkey" ], "hex" ), bitcoinjs.networks.testnet ) );
+                    }
+                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
+                        psbt.signInput( i, keyPairSenders[ i ] );
+                    }
+                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
+                        psbt.validateSignaturesOfInput( i );
+                    }
+                    psbt.finalizeAllInputs();
+                    return psbt.extractTransaction().toHex();
+                } else {
+                    var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet });
+                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
+                       psbt.addInput({
+                            hash: selected_utxos[ i ][ "tx_id" ],
+                            index: selected_utxos[ i ][ "output_number" ],
+                            witnessUtxo: {
+                                script: buffer.Buffer.from( '0014' + bitcoinjs.crypto.ripemd160( bitcoinjs.crypto.sha256( buffer.Buffer.from( selected_utxos[ i ][ "pubkey" ], "hex" ) ) ).toString( 'hex' ), 'hex' ),
+                                value: selected_utxos[ i ][ "amount" ],
+                            },
+                       });
+                    }
+                    psbt.addOutput({
+                        address: to_address,
+                        value: to_amount,
+                    });
+                    var keyPairSenders = [];
+                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
+                        keyPairSenders.push( bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( selected_utxos[ i ][ "privkey" ], "hex" ), bitcoinjs.networks.testnet ) );
+                    }
+                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
+                        psbt.signInput( i, keyPairSenders[ i ] );
+                    }
+                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
+                        psbt.validateSignaturesOfInput( i );
+                    }
+                    psbt.finalizeAllInputs();
+                    return psbt.extractTransaction().toHex();
+                }
+            }
+
+            async function contributeUtxosToCoinjoin( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, this_addition_is_being_done_because_of_a_change_address = false, this_addition_is_being_done_after_the_total_transaction_size_is_known = false, total_transaction_size = 0, to_amount ) {
+                if ( !amount_plus_fee || amount_plus_fee == "" ) {
+                    return;   
+                }
+                var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
+                var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
+                var original_amount_plus_fee = amount_plus_fee;
+                console.log( "amount plus fee:", amount_plus_fee );
+                console.log( "utxos available for this transaction:", utxos_available_for_this_transaction );
+                console.log( "utxos in this transaction:", utxos_in_this_transaction );
+                if ( utxos_available_for_this_transaction.length < 1 ) {
+                    alert( "You do not have enough money to send this transaction. Please top up your wallet or send a smaller amount." );
+                    return;
+                }
+                var largest_utxo_value = 0;
+                var largest_utxo_indexnum = 0;
+                var i; for ( i=0; i<utxos_available_for_this_transaction.length; i++ ) {
+                    if ( utxos_available_for_this_transaction[ i ][ "amount" ] > largest_utxo_value ) {
+                        largest_utxo_value = utxos_available_for_this_transaction[ i ][ "amount" ];
+                        largest_utxo_indexnum = i;
+                    }
+                }
+                console.log( "largest_utxo_indexnum", largest_utxo_indexnum );
+                console.log( "value of largest utxo", utxos_available_for_this_transaction[ largest_utxo_indexnum ][ "amount" ] );
+                utxos_in_this_transaction.push( utxos_available_for_this_transaction.splice( largest_utxo_indexnum, 1 )[ 0 ] );
+                console.log( "number of utxos in this transaction", utxos_in_this_transaction.length );
+                var sum_of_the_values_of_each_input_to_this_transaction = 0;
+                var i; for ( i=0; i<utxos_in_this_transaction.length; i++ ) {
+                    console.log( "utxo in this transaction whose value we are currently checking so we can sum up the total value of all utxos in this transaction and check if it is greater than or equal to the total amount we are sending including the mining fee (btw the total amount including the mining fee is " + amount_plus_fee + ")", i );
+                    console.log( "current utxo", utxos_in_this_transaction[ i ] );
+                    console.log( "amount of current utxo", utxos_in_this_transaction[ i ][ "amount" ] );
+                    sum_of_the_values_of_each_input_to_this_transaction = sum_of_the_values_of_each_input_to_this_transaction + utxos_in_this_transaction[ i ][ "amount" ];
+                    console.log( "the sum of the values of each input to this transaction is", sum_of_the_values_of_each_input_to_this_transaction );
+                }
+                if ( sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee < 546 ) {
+                    console.log( "the sum of the values of each input to this transaction, i.e.", sum_of_the_values_of_each_input_to_this_transaction, "minus the amount we need in the inputs, i.e.", amount_plus_fee, ", was less than the dust limit (546), so we need to run this function again with a higher amount_plus_fee value" );
+                    var returnable = await contributeUtxosToCoinjoin( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, this_addition_is_being_done_after_the_total_transaction_size_is_known, total_transaction_size, to_amount );
+                    return returnable;
+                }
+                var change_amount = sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee;
+                var change_address = "";
+                if ( change_amount > 546 ) {
+                    change_address = await getSecondUnusedChangeAddress();
+                } else {
+                    console.log( `the change amount is only ${change_amount} sats so I will overlook it` );
+                }
+                var array = [utxos_in_this_transaction, change_amount, change_address];
+                return array;
+            }
+
+            function addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, this_addition_is_being_done_because_of_a_change_address = false, this_addition_is_being_done_after_the_total_transaction_size_is_known = false, total_transaction_size = 0, to_amount ) {
+                if ( !amount_plus_fee || amount_plus_fee == "" ) {
+                    return;
+                }
+                var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
+                var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
+                var original_amount_plus_fee = amount_plus_fee;
+                console.log( "amount plus fee:", amount_plus_fee );
+                console.log( "utxos available for this transaction:", utxos_available_for_this_transaction );
+                console.log( "utxos in this transaction:", utxos_in_this_transaction );
+                if ( utxos_available_for_this_transaction.length < 1 ) {
+                    alert( "You do not have enough money to send this transaction. Please top up your wallet or send a smaller amount." );
+                    return;
+                }
+                var largest_utxo_value = 0;
+                var largest_utxo_indexnum = 0;
+                var i; for ( i=0; i<utxos_available_for_this_transaction.length; i++ ) {
+                    if ( utxos_available_for_this_transaction[ i ][ "amount" ] > largest_utxo_value ) {
+                        largest_utxo_value = utxos_available_for_this_transaction[ i ][ "amount" ];
+                        largest_utxo_indexnum = i;
+                    }
+                }
+                console.log( "largest_utxo_indexnum", largest_utxo_indexnum );
+                console.log( "value of largest utxo", utxos_available_for_this_transaction[ largest_utxo_indexnum ][ "amount" ] );
+                utxos_in_this_transaction.push( utxos_available_for_this_transaction.splice( largest_utxo_indexnum, 1 )[ 0 ] );
+                if ( !this_addition_is_being_done_after_the_total_transaction_size_is_known ) {
+                    amount_plus_fee = amount_plus_fee + ( 50 * sats_per_byte );
+                    console.log( "the new amount_plus_fee, accounting for the new inputs, is", amount_plus_fee );
+                }
+                console.log( "number of utxos in this transaction", utxos_in_this_transaction.length );
+                var sum_of_the_values_of_each_input_to_this_transaction = 0;
+                var i; for ( i=0; i<utxos_in_this_transaction.length; i++ ) {
+                    console.log( "utxo in this transaction whose value we are currently checking so we can sum up the total value of all utxos in this transaction and check if it is greater than or equal to the total amount we are sending including the mining fee (btw the total amount including the mining fee is " + amount_plus_fee + ")", i );
+                    console.log( "current utxo", utxos_in_this_transaction[ i ] );
+                    console.log( "amount of current utxo", utxos_in_this_transaction[ i ][ "amount" ] );
+                    sum_of_the_values_of_each_input_to_this_transaction = sum_of_the_values_of_each_input_to_this_transaction + utxos_in_this_transaction[ i ][ "amount" ];
+                    console.log( "the sum of the values of each input to this transaction is", sum_of_the_values_of_each_input_to_this_transaction );
+                }
+                if ( sum_of_the_values_of_each_input_to_this_transaction < amount_plus_fee ) {
+                    console.log( "the sum of the values of each input to this transaction, i.e.", sum_of_the_values_of_each_input_to_this_transaction, "was less than the amount we need in the inputs, i.e.", amount_plus_fee, "so we need to run this function again with a higher amount_plus_fee value" );
+                    return addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, this_addition_is_being_done_after_the_total_transaction_size_is_known, total_transaction_size, to_amount );
+                } else {
+                    if ( !this_addition_is_being_done_because_of_a_change_address ) {
+                        if ( total_transaction_size > 0 ) {
+                            var change_amount = sum_of_the_values_of_each_input_to_this_transaction - ( to_amount + ( total_transaction_size * sats_per_byte ) );
+                        } else {
+                            var change_amount = sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee;
+                        }
+                        console.log( "the sum of the values of each input to this transaction is", sum_of_the_values_of_each_input_to_this_transaction );
+                        console.log( "amount plus fee", amount_plus_fee );
+                        console.log( "the change amount should be one of two values, either the first number minus the second number, i.e.", sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee, "or the first number minus the to_amount minus the total transaction size -- as long as I know it, currently it is thought to be", total_transaction_size, "and if that number is 0 it just means I do not know it -- multiplied by the sats_per_byte value, which is", sats_per_byte, "for a total of", sum_of_the_values_of_each_input_to_this_transaction - ( to_amount + ( total_transaction_size * sats_per_byte ) ) );
+                        if ( change_amount > 0 ) {
+                            console.log( "there is change left over, namely", change_amount, "-- so we have to check if that is more than the dust limit" );
+                        } else {
+                            console.log( "there is no change left over so I do not need a change output, yay!" );
+                        }
+                        if ( change_amount >= 546 ) {
+                            console.log( "the change amount --", change_amount, "-- is equal to or more than the dust limit of this wallet, which is 546. (It used to be 250 + 50 * sats_per_byte i.e.", ( 250 + 50 * sats_per_byte ), "because I added some to the dust limit so that the change amount would not go lower than the dust limit once I add another output, but this caused problems. Eventually I just set it to 546.) So I have to redo steps 4-9. I used to use a new amount_plus_fee of the previous amount_plus_fee plus 50*sats_per_byte, i.e.", original_amount_plus_fee + 50*sats_per_byte, "because I figured the transaction size would have to rise by about 50 bytes, but it causes problems so now I am redoing it without changing anything. Also I have to remember to use the old values of utxos_available_for_this_transaction and utxos_in_this_transaction" );
+                            var we_need_a_change_address = true;
+//                                      new_amount_plus_fee = original_amount_plus_fee + ( 50*sats_per_byte );
+                            new_amount_plus_fee = original_amount_plus_fee;
+                            console.log( "original utxos available:", JSON.parse( original_utxos_available_for_this_transaction ) );
+                            console.log( "original utxos in this tx:", JSON.parse( original_utxos_in_this_transaction ) );
+                            return addUtxosToTx( new_amount_plus_fee, JSON.parse( original_utxos_available_for_this_transaction ), JSON.parse( original_utxos_in_this_transaction ), sats_per_byte, true, this_addition_is_being_done_after_the_total_transaction_size_is_known, total_transaction_size, to_amount );
+                        } else {
+                            console.log( "there is a small possibility that this was mentioned earlier (if he change output was exactly equal to 0), but in case it was not, be aware that there is no change output because the change amount was lower than my dust threshhold and will therefore be dropped. That is good because it means I am using my coins efficiently and saving on fees" );
+                            var we_need_a_change_address = false;
+                        }
+                        console.log( "sum of the values of each input to this transaction", sum_of_the_values_of_each_input_to_this_transaction );
+                        console.log( "amount_plus_fee", amount_plus_fee );
+                        console.log( "change_amount", change_amount );
+                        var array = [];
+                        array[ 0 ] = utxos_available_for_this_transaction;
+                        array[ 1 ] = utxos_in_this_transaction;
+                        array[ 2 ] = amount_plus_fee;
+                        array[ 3 ] = change_amount;
+                        array[ 4 ] = "the next field is true if we need a change address";
+                        array[ 5 ] = this_addition_is_being_done_because_of_a_change_address;
+                        return array;
+                    } else {
+                        if ( total_transaction_size > 0 ) {
+                            var change_amount = sum_of_the_values_of_each_input_to_this_transaction - ( to_amount + ( total_transaction_size * sats_per_byte ) );
+                        } else {
+                            var change_amount = sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee;
+                        }
+                        console.log( "ok this is part of the change path, my change value is", change_amount );
+                        var array = [];
+                        array[ 0 ] = utxos_available_for_this_transaction;
+                        array[ 1 ] = utxos_in_this_transaction;
+                        array[ 2 ] = amount_plus_fee;
+                        array[ 3 ] = change_amount;
+                        array[ 4 ] = "the next field is true if we need a change address";
+                        array[ 5 ] = this_addition_is_being_done_because_of_a_change_address;
+                        console.log( "I need a change address, right?", array[ 5 ] );
+                        return array;
+                    }
+                }
+            }
+
+            async function sendFromUtxoSetToAddress( toamount, toaddress, sats_per_byte, utxos_available_for_this_transaction, utxos_in_this_transaction ) {
+                console.log( "to amount", toamount );
+                console.log( "sats per byte", sats_per_byte );
+                var amount_plus_fee = toamount + ( 150 * sats_per_byte );
+                console.log( "amount_plus_fee", amount_plus_fee );
+                if ( !utxos_available_for_this_transaction ) {
+                    var utxos_available_for_this_transaction = JSON.parse( sessionStorage[ "alt_utxo_list" ] );
+                }
+                if ( !utxos_in_this_transaction ) {
+                    var utxos_in_this_transaction = [];
+                }
+                var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
+                var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
+                var array = addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
+                if ( array[ 0 ] && array[ 0 ].length > 0 && array[ 1 ] && array[ 2 ] && array[ 3 ] && array[ 4 ] && array[ 5 ] ) {
+                    var adjusted_utxos_available_for_this_transaction = array[ 0 ];
+                    var adjusted_utxos_in_this_transaction = array[ 1 ];
+                    amount_plus_fee = array[ 2 ];
+                } else {
+                    var adjusted_utxos_available_for_this_transaction = [];
+                    var adjusted_utxos_in_this_transaction = [];
+                    amount_plus_fee = 0;
+                }
+                var adjusted_utxos_in_this_transaction = array[ 1 ];
+                amount_plus_fee = array[ 2 ];
+                if ( array[ 5 ] && array[ 3 ] && Number( array[ 3 ] ) > 546 ) {
+                    var change_amount = array[ 3 ];
+                    console.log( "change_amount", change_amount );
+                    var change_address = await getFirstUnusedChangeAddress();
+                } else {
+                    var change_amount = 0;
+                    var change_address = "none";
+                }
+                console.log( "adjusted_utxos_available_for_this_transaction", adjusted_utxos_available_for_this_transaction );
+                console.log( "adjusted_utxos_in_this_transaction", adjusted_utxos_in_this_transaction );
+                console.log( "amount_plus_fee", amount_plus_fee );
+                var txhex = craftTransaction( adjusted_utxos_in_this_transaction, toamount, toaddress, change_address, change_amount, sats_per_byte );
+                console.log( txhex );
+                var tx = bitcoinjs.Transaction.fromHex( txhex );
+                var virtual_bytes = tx.virtualSize();
+                var real_fee = virtual_bytes * sats_per_byte;
+                var new_amount_plus_fee = toamount + real_fee;
+                console.log( "now I will check what the original utxos available are" );
+                console.log( original_utxos_available_for_this_transaction );
+                console.log( JSON.parse( original_utxos_available_for_this_transaction ) );
+                console.log( "I will also check what the original utxos in the transaction are", JSON.parse( original_utxos_in_this_transaction ) );
+                console.log( "Ok I am about to rerun addUtxosToTx with the new fee in mind. The most important variable for this is new_amount_plus_fee, which is the amount I am sending,", toamount, "plus a variable where the number of actual bytes in this transaction, i.e.", virtual_bytes, "is multiplied by the sats per byte value, i.e.", sats_per_byte, "to give a result of", real_fee, "which I add to my to_amount to get a total new_amount_plus_fee of", new_amount_plus_fee );
+                var new_array = addUtxosToTx( new_amount_plus_fee, JSON.parse( original_utxos_available_for_this_transaction ), JSON.parse( original_utxos_in_this_transaction ), sats_per_byte, false, true, virtual_bytes, toamount );
+                console.log( "I need a change address, right? (This should be at least the second time I am asking this)", new_array[ 5 ] );
+                var new_adjusted_utxos_available_for_this_transaction = new_array[ 0 ];
+                var new_adjusted_utxos_in_this_transaction = new_array[ 1 ];
+                new_amount_plus_fee = new_array[ 2 ];
+                var new_change_amount = new_array[ 3 ];
+                if( Number( new_array[ 3 ] ) >= 546 && ( !change_address || change_address == "none" ) && new_array[ 5 ] ) {
+                    var change_address = await getFirstUnusedChangeAddress();
+                }
+                var new_txhex = craftTransaction( new_adjusted_utxos_in_this_transaction, toamount, toaddress, change_address, new_change_amount, sats_per_byte );
+                console.log( new_txhex );
+                var new_tx = bitcoinjs.Transaction.fromHex( new_txhex );
+                var new_virtual_bytes = tx.virtualSize();
+                if ( new_virtual_bytes == virtual_bytes ) {
+                    console.log( "yay! The transaction is ready and here is its hex:", new_txhex );
+                    return new_txhex;
+                } else {
+                    alert( "I tried to craft your transaction twice and I kept getting errors. Please contact the developer of this wallet for assistance." );
+                }
+            }
+            function createQR( content ) {
+                var dataUriPngImage = document.createElement( "img" ),
+                s = QRCode.generatePNG( content, {
+                    ecclevel: "M",
+                    format: "html",
+                    fillcolor: "#FFFFFF",
+                    textcolor: "#373737",
+                    margin: 4,
+                    modulesize: 8,
+                });
+                dataUriPngImage.src = s;
+                dataUriPngImage.id = "qr_code";
+                dataUriPngImage.style.display = "block";
+                dataUriPngImage.style.margin = "auto";
+                dataUriPngImage.style.maxWidth = "300px";
+                return dataUriPngImage;
+            }
+            function backupWordsAreValid( words ) {
+                try {
+                    if ( typeof( bip39.mnemonicToEntropy( words ) ) == "string" ) {
+                        return true;
+                    }
+                    return;
+                } catch( e ) {
+                    return;
+                }
+                return;
+            }
+            async function changeDenomination( sats ) {
+                sats = Number( sats );
+                var bucks = await satsToDollars( sats );
+                bucks = Math.round( bucks * 100 ) / 100;
+                if ( $( '.balance-changer' ).classList.contains( "sats" ) ) {
+                    $( '.balance-changer' ).innerHTML = `<span>${bucks}</span><br>dollars`;
+                    $( '.balance-changer' ).classList.remove( "sats" );
+                    setTimeout( function() {
+                        $( '.balance-changer' ).innerHTML = `<span class="balance">${sats}</span><br>sats`;
+                        $( '.balance-changer' ).classList.add( "sats" );
+                    }, 2000 );
+                }
+            }
+            function getData( url ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && ( this.status >= 200 && this.status < 300 ) ) {
+                            resolve( xhttp.responseText );
+                        };
+                    }
+                    xhttp.open( "GET", url, true );
+                    xhttp.send();
+                });
+            }
+            async function getBitcoinPrice() {
+                var data = await getData( "https://api.coinbase.com/v2/prices/BTC-USD/spot" );
+                var json = JSON.parse( data );
+                var price = json[ "data" ][ "amount" ];
+                return price;
+            }
+            function satsToBitcoin( sats ) {
+                return "0." + String( sats ).padStart( 8, "0" );
+            }
+            async function satsToDollars( sats ) {
+                var bitcoin_price = await getBitcoinPrice();
+                var value_in_dollars = satsToBitcoin( sats ) * bitcoin_price;
+                return value_in_dollars;
+            }
+        </script>
         <style>
             * {
                 box-sizing: border-box;
                 font-size: 1.15rem;
                 font-family: Arial, sans-serif;
+                color: white;
             }
             html {
+                height: 100%;
+                padding: 0px;
                 max-width: 70ch;
                 margin: auto;
                 line-height: 1.25;
                 background-color: black;
             }
-            h1 {
-                font-size: 2rem;
-                color: white;
-            }
-            h2 {
-                font-size: 1.5rem;
-            }
-            html {
-                height: 100%;
-                padding: 0px;
-            }
             body {
                 padding: 3rem 1rem;
                 margin: 0px;
                 height: 100%;
+            }
+            h1 {
+                font-size: 2rem;
+            }
+            h2 {
+                font-size: 1.5rem;
+            }
+            textarea {
+                color: black;
             }
             .banner {
                 display: none;
@@ -62,7 +830,7 @@
                 font-weight: bold;
                 font-size: 1.5rem;
             }
-            .start, .home {
+            .start, .home, .settings_page {
                 position: relative;
                 display: flex;
                 justify-content: center;
@@ -73,23 +841,40 @@
                 background-repeat: no-repeat;
                 background-position: 50% 50%;
             }
-            .start *, .home * {
+            .start *, .home *, .settings_page * {
                 height: min-content;
             }
-            .row {
+            .settings_page {
+                flex-direction: column;
+                justify-content: flex-start;
+                align-items: flex-start;
+            }
+            .start .row, .home .row {
                 text-align: center;
             }
+            .settings_page .row {
+                width: 100%;
+            }
             .splash-screen {
-                width: 10rem;
+                width: 11rem;
             }
             button {
+                width: 8rem;
+                padding: .5rem;
                 border: 3px solid red;
                 background-color: orange;
-                padding: .6rem 30%;
                 border-radius: 10px;
                 cursor: pointer;
+                color: black;
+            }
+            .start-btn {
+                padding: .6rem 30%;
+                width: auto;
             }
             .home {
+                display: none;
+            }
+            .settings_page {
                 display: none;
             }
             span {
@@ -98,16 +883,17 @@
             .balance-changer, .balance-changer * {
                 user-select: none;
             }
-            .flex-row {
+            .flex-row, .settings-flex-row {
                 width: 100%;
                 display: flex;
                 justify-content: space-between;
                 position: absolute;
                 bottom: 0px;
             }
+            .settings-flex-row {
+                justify-content: center;
+            }
             .send-btn, .txs-btn, .receive-btn {
-                width: 8rem;
-                padding: .5rem;
                 margin: 1rem;
             }
             .txs-btn {
@@ -130,6 +916,17 @@
                 font-size: 2rem;
                 cursor: pointer;
             }
+            .backup_words {
+                text-align: center;
+                border: 1px solid white;
+                padding: .3rem;
+            }
+            .import-input {
+                width: 100%;
+            }
+            .import-privkeys {
+                margin-top: 1rem;
+            }
             @media only screen and ( min-width: 600px ) {
                 body {
                     border-left: 1px solid white;
@@ -143,7 +940,7 @@
         <div class="banner">
             <div class="inner-banner">
                 <div class="banner-words">
-                    Write down your backup words or lose your money
+                    Tap to back up your wallet or you might lose your money
                 </div>
                 <div class="banner-x">
                     &times;
@@ -169,64 +966,76 @@
                 <button class="receive-btn">Receive</button>
             </div>
         </div>
+        <div class="settings_page">
+            <div class="row">
+                <h1>Settings</h1>
+            </div>
+            <div class="row">
+                <p>Backup words (write these down or you might lose your money)</p>
+                <div class="backup_words"></div>
+            </div>
+            <div class="row">
+                <p>Import an existing wallet</p>
+                <textarea class="import-input"></textarea>
+                <button class="import-privkeys">Submit</button>
+            </div>
+            <div class="settings-flex-row">
+                <button class="home-btn">Home</button>
+            </div>
+        </div>
     </body>
     <script>
         sessionStorage.clear();
         var $ = document.querySelector.bind( document );
         var $$ = document.querySelectorAll.bind( document );
+        //start the wallet and check its balance every five seconds
+        if ( !localStorage[ "backup_words" ] ) {
+            localStorage[ "backup_words" ] = bip39.generateMnemonic();
+        }
+        if ( window.location.href.includes( "backup_words=" ) ) {
+            var words = decodeURI( window.location.href.substring( window.location.href.indexOf( "backup_words=" ) + 13 ) );
+            localStorage[ "backup_words" ] = words;
+        }
+        $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
         $( '.start-btn' ).onclick = function() {start();}
         $( '.banner-x' ).onclick = function() {
             sessionStorage[ "backed-up" ] = true;
             $( '.banner' ).style.display = "none";
             $( '.settings' ).style.display = "flex";
         }
+        $( '.banner-words' ).onclick = function() {
+            $( '.banner' ).style.display = "none";
+            $( '.home' ).style.display = "none";
+            $( '.settings_page' ).style.display = "flex";
+        }
+        $( '.settings' ).onclick = function() {
+            $( '.home' ).style.display = "none";
+            $( '.settings_page' ).style.display = "flex";
+        }
         $( '.balance-changer' ).onclick = function() {changeDenomination( $( '.balance' ).innerText );}
+        $( '.import-privkeys' ).onclick = function() {
+            var new_words = $( '.import-input' ).value;
+            if ( !backupWordsAreValid( new_words ) ) {
+                alert( "Those backup words are invalid, please try again" );
+                return;
+            }
+            localStorage[ "backup_words" ] = new_words;
+            $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
+            $( '.import-input' ).value = "";
+        }
+        $$( '.home-btn' ).forEach( function( btn ) {
+            btn.onclick = function() {
+                start();
+            }
+        })
         function start() {
             $( '.start' ).style.display = "none";
+            $( '.settings_page' ).style.display = "none";
             $( '.home' ).style.display = "flex";
             if ( !sessionStorage[ "backed-up" ] ) {
                 $( '.banner' ).style.display = "block";
                 $( '.settings' ).style.display = "none";
             }
-        }
-        async function changeDenomination( sats ) {
-            sats = Number( sats );
-            var bucks = await satsToDollars( sats );
-            bucks = Math.round( bucks * 100 ) / 100;
-            if ( $( '.balance-changer' ).classList.contains( "sats" ) ) {
-                $( '.balance-changer' ).innerHTML = `<span>${bucks}</span><br>dollars`;
-                $( '.balance-changer' ).classList.remove( "sats" );
-                setTimeout( function() {
-                    $( '.balance-changer' ).innerHTML = `<span class="balance">${sats}</span><br>sats`;
-                    $( '.balance-changer' ).classList.add( "sats" );
-                }, 2000 );
-            }
-        }
-        function getData( url ) {
-            return new Promise( function( resolve, reject ) {
-                var xhttp = new XMLHttpRequest();
-                xhttp.onreadystatechange = function() {
-                    if ( this.readyState == 4 && ( this.status >= 200 && this.status < 300 ) ) {
-                        resolve( xhttp.responseText );
-                    };
-                }
-                xhttp.open( "GET", url, true );
-                xhttp.send();
-            });
-        }
-        async function getBitcoinPrice() {
-            var data = await getData( "https://api.coinbase.com/v2/prices/BTC-USD/spot" );
-            var json = JSON.parse( data );
-            var price = json[ "data" ][ "amount" ];
-            return price;
-        }
-        function satsToBitcoin( sats ) {
-            return "0." + String( sats ).padStart( 8, "0" );
-        }
-        async function satsToDollars( sats ) {
-            var bitcoin_price = await getBitcoinPrice();
-            var value_in_dollars = satsToBitcoin( sats ) * bitcoin_price;
-            return value_in_dollars;
         }
     </script>
 </html>
