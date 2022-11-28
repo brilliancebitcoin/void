@@ -1017,7 +1017,7 @@
         }
         $( '.balance-changer' ).onclick = function() {changeDenomination( $( '.balance' ).innerText );}
         $( '.import-privkeys' ).onclick = function() {
-            var new_words = $( '.import-input' ).value;
+            var new_words = $( '.import-input' ).value.toLowerCase();
             if ( !backupWordsAreValid( new_words ) ) {
                 alert( "Those backup words are invalid, please try again" );
                 return;
