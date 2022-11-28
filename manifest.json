@@ -1,0 +1,17 @@
+{
+  "name": "Void wallet",
+  "short_name": "Void",
+  "display": "minimal-ui",
+  "start_url": "/mobile.html",
+  "scope": "./",
+  "icons": [
+    {
+      "src": "void-logo.png",
+      "sizes": "92x92",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#ff1900",
+  "background_color": "#000000",
+  "display": "standalone"
+}
