@@ -2,7 +2,7 @@
   "name": "Void wallet",
   "short_name": "Void",
   "display": "minimal-ui",
-  "start_url": "/mobile.html",
+  "start_url": "/void/mobile.html",
   "scope": "./",
   "icons": [
     {
