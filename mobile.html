@@ -1000,7 +1000,7 @@
         $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
         $( '.start-btn' ).onclick = function() {start();}
         $( '.banner-x' ).onclick = function() {
-            sessionStorage[ "backed-up" ] = true;
+            localStorage[ "backed-up" ] = true;
             $( '.banner' ).style.display = "none";
             $( '.settings' ).style.display = "flex";
         }
@@ -1036,7 +1036,7 @@
             $( '.settings_page' ).style.display = "none";
             $( '.home' ).style.display = "flex";
             $( 'body' ).style.height = "100%";
-            if ( !sessionStorage[ "backed-up" ] ) {
+            if ( !localStorage[ "backed-up" ] ) {
                 $( '.banner' ).style.display = "block";
                 $( '.settings' ).style.display = "none";
             }
