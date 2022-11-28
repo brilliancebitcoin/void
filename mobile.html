@@ -11,6 +11,9 @@
         <script src="https://bundle.run/buffer@6.0.3"></script>
         <script src="https://bundle.run/browserify-cipher@1.0.1"></script>
         <script>
+            navigator.serviceWorker && navigator.serviceWorker.register( './sw.js' ).then( function( registration ) {
+                //console.log( 'Excellent, registered with scope: ', registration.scope );
+            });
             function computeRawPrivkey( node ) {
                 return bitcoinjs.ECPair.fromPrivateKey( node.privateKey, { network: bitcoinjs.networks.testnet } ).__D.toString( "hex" );
             }
