@@ -405,6 +405,24 @@
                 return Number( balance ).toString();
             }
 
+            async function displayQuickBalance() {
+                var balance = 0;
+                if ( sessionStorage[ "utxos" ] ) {
+                    var utxos = JSON.parse( sessionStorage[ "utxos" ] );
+                } else {
+                    var utxos = [];
+                }
+                alt_utxo_list = [];
+                utxos.forEach( function( item ) {
+                    var i; for ( i=0; i<item[ "utxos" ].length; i++ ) {
+                        balance = balance + Number( item[ "utxos" ][ i ][ "amount" ] );
+                        alt_utxo_list.push( item[ "utxos" ][ i ] );
+                    }
+                });
+                sessionStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
+                return Number( balance ).toString();
+            }
+
             function pushBTCpmt( rawtx ) {
                 return new Promise( function( resolve, reject ) {
                     var xhttp = new XMLHttpRequest();
@@ -733,7 +751,7 @@
             async function changeDenomination( sats ) {
                 sats = Number( sats );
                 var bucks = await satsToDollars( sats );
-                bucks = Math.round( bucks * 100 ) / 100;
+                bucks = ( Math.round( bucks * 100 ) / 100 ).toFixed( 2 );
                 if ( $( '.balance-changer' ).classList.contains( "sats" ) ) {
                     $( '.balance-changer' ).innerHTML = `<span>${bucks}</span><br>dollars`;
                     $( '.balance-changer' ).classList.remove( "sats" );
@@ -830,7 +848,7 @@
                 font-weight: bold;
                 font-size: 1.5rem;
             }
-            .start, .home, .settings_page {
+            .start, .home, .settings_page, .receive {
                 position: relative;
                 display: flex;
                 justify-content: center;
@@ -841,7 +859,7 @@
                 background-repeat: no-repeat;
                 background-position: 50% 50%;
             }
-            .start *, .home *, .settings_page * {
+            .start *, .home *, .settings_page *, .receive * {
                 height: min-content;
             }
             .settings_page {
@@ -849,14 +867,16 @@
                 justify-content: flex-start;
                 align-items: flex-start;
             }
-            .start .row, .home .row {
+            .start .row, .home .row, .receive .row {
+                width: 100%;
                 text-align: center;
+                word-wrap: break-word;
             }
             .settings_page .row {
                 width: 100%;
             }
             .splash-screen {
-                width: 11rem;
+                width: 11rem !important;
             }
             button {
                 width: 8rem;
@@ -875,6 +895,9 @@
                 display: none;
             }
             .settings_page {
+                display: none;
+            }
+            .receive {
                 display: none;
             }
             span {
@@ -958,7 +981,7 @@
         <div class="home">
             <div class="settings">⚙️</div>
             <div class="row">
-                <h1 class="balance-changer sats"><span class="balance">18500</span><br>sats</h1>
+                <h1 class="balance-changer sats"><span class="balance"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></span></h1>
             </div>
             <div class="flex-row">
                 <button class="send-btn">Send</button>
@@ -984,18 +1007,26 @@
             </div>
             <div style="clear: all; height: 5rem;"></div>
         </div>
+        <div class="receive">
+            <div class="row">
+                <div class="address-qr"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></div>
+                <div class="address-line">
+                    <span class="address"></span>
+                </div>
+            </div>
+            <div class="settings-flex-row">
+                <button class="home-btn">Home</button>
+            </div>
+            <div style="clear: all; height: 5rem;"></div>
+        </div>
     </body>
     <script>
-        sessionStorage.clear();
+        //sessionStorage.clear();
         var $ = document.querySelector.bind( document );
         var $$ = document.querySelectorAll.bind( document );
         //start the wallet and check its balance every five seconds
         if ( !localStorage[ "backup_words" ] ) {
             localStorage[ "backup_words" ] = bip39.generateMnemonic();
-        }
-        if ( window.location.href.includes( "backup_words=" ) ) {
-            var words = decodeURI( window.location.href.substring( window.location.href.indexOf( "backup_words=" ) + 13 ) );
-            localStorage[ "backup_words" ] = words;
         }
         $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
         $( '.start-btn' ).onclick = function() {start();}
@@ -1015,6 +1046,11 @@
             $( '.settings_page' ).style.display = "flex";
             $( 'body' ).style.height = "auto";
         }
+        $( '.receive-btn' ).onclick = function() {
+            $( '.home' ).style.display = "none";
+            $( '.settings_page' ).style.display = "none";
+            $( '.receive' ).style.display = "flex";
+        }
         $( '.balance-changer' ).onclick = function() {changeDenomination( $( '.balance' ).innerText );}
         $( '.import-privkeys' ).onclick = function() {
             var new_words = $( '.import-input' ).value.toLowerCase();
@@ -1025,6 +1061,9 @@
             localStorage[ "backup_words" ] = new_words;
             $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
             $( '.import-input' ).value = "";
+            sessionStorage.removeItem( "utxos" );
+            sessionStorage.removeItem( "alt_utxo_list" );
+            $( '.balance-changer' ).innerHTML = `<span class="balance"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></span>`
         }
         $$( '.home-btn' ).forEach( function( btn ) {
             btn.onclick = function() {
@@ -1034,6 +1073,7 @@
         function start() {
             $( '.start' ).style.display = "none";
             $( '.settings_page' ).style.display = "none";
+            $( '.receive' ).style.display = "none";
             $( '.home' ).style.display = "flex";
             $( 'body' ).style.height = "100%";
             if ( !localStorage[ "backed-up" ] ) {
@@ -1041,5 +1081,30 @@
                 $( '.settings' ).style.display = "none";
             }
         }
+        async function startWallet( num ) {
+            if ( num == 27 ) {
+                var balance = await displayQuickBalance();
+            } else {
+                var balance = await displayBalance();
+            }
+            $( '.balance-changer' ).innerHTML = `<span class="balance">${balance}</span><br>sats`;
+            var firstUnusedAddress = await getFirstUnusedAddress();
+            $( '.address' ).innerText = firstUnusedAddress;
+            $( '.address-qr' ).innerText = "";
+            $( '.address-qr' ).append( createQR( "bitcoin:" + firstUnusedAddress ) );
+        }
+        function startLoop( num ) {
+            startWallet( num );
+            //checkHeartbeat();
+            if ( num == 30 ) {
+                if ( window.location.href.includes( "pool=true" ) ) {
+                    swimInPool();
+                }
+                num = -1;
+            }
+            num = num + 1;
+            setTimeout( function() {startLoop( num );}, 10000 );
+        }
+        startLoop( 27 );
     </script>
 </html>
