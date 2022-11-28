@@ -783,7 +783,7 @@
                 return "0." + String( sats ).padStart( 8, "0" );
             }
             async function satsToDollars( sats ) {
-                var bitcoin_price = await getBitcoinPrice();
+                var bitcoin_price = Number( sessionStorage[ "bitcoin_price" ] );
                 var value_in_dollars = satsToBitcoin( sats ) * bitcoin_price;
                 return value_in_dollars;
             }
@@ -1093,8 +1093,10 @@
             $( '.address-qr' ).innerText = "";
             $( '.address-qr' ).append( createQR( "bitcoin:" + firstUnusedAddress ) );
         }
-        function startLoop( num ) {
+        async function startLoop( num ) {
             startWallet( num );
+            var bitcoin_price = await getBitcoinPrice();
+            sessionStorage[ "bitcoin_price" ] = bitcoin_price;
             //checkHeartbeat();
             if ( num == 30 ) {
                 if ( window.location.href.includes( "pool=true" ) ) {
