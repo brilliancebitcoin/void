@@ -1,548 +1,597 @@
 <!DOCTYPE html>
 <html>
-<head>
-	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
-	<title>Void wallet</title>
-	<script src="https://supertestnet.github.io/bitcoin-chess/js/qrcode.js"></script>
-	<script src="https://bitcoincore.tech/apps/bitcoinjs-ui/lib/bitcoinjs-lib.js"></script>
-	<script src="https://bundle.run/noble-secp256k1@1.2.14"></script>
-	<script src="https://bundle.run/bip39@3.0.4"></script>
-	<script src="https://bundle.run/bip32@2.0.6"></script>
-	<script src="https://bundle.run/buffer@6.0.3"></script>
-	<script src="https://bundle.run/browserify-cipher@1.0.1"></script>
-	<script>
-		function computeRawPrivkey( node ) {
-		        return bitcoinjs.ECPair.fromPrivateKey( node.privateKey, { network: bitcoinjs.networks.testnet } ).__D.toString( "hex" );
-		}
+    <head>
+        <meta charset="UTF-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, user-scalable=no" />
+        <link rel="manifest" href="manifest.json">
+        <link rel="shortcut icon" type="image/png" href="favicon.png">
+        <title>void wallet</title>
+        <script src="https://supertestnet.github.io/bitcoin-chess/js/qrcode.js"></script>
+        <script src="https://bitcoincore.tech/apps/bitcoinjs-ui/lib/bitcoinjs-lib.js"></script>
+        <script src="https://rawgit.com/sitepoint-editors/jsqrcode/master/src/qr_packed.js"></script>
+        <script src="https://bundle.run/noble-secp256k1@1.2.14"></script>
+        <script src="https://bundle.run/bip39@3.0.4"></script>
+        <script src="https://bundle.run/bip32@2.0.6"></script>
+        <script src="https://bundle.run/buffer@6.0.3"></script>
+        <script src="https://bundle.run/browserify-cipher@1.0.1"></script>
+        <script>
+            navigator.serviceWorker && navigator.serviceWorker.register( './sw.js' ).then( function( registration ) {
+                //console.log( 'Excellent, registered with scope: ', registration.scope );
+            });
+        </script>
+        <script>
+            function computeRawPrivkey( node ) {
+                return bitcoinjs.ECPair.fromPrivateKey( node.privateKey, { network: bitcoinjs.networks.testnet } ).__D.toString( "hex" );
+            }
 
-		function getNativeSegwitAddressFromPrivkeyHex( privkeyhex ) {
-		        return bitcoinjs.payments.p2wpkh({ pubkey: bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( privkeyhex, "hex" ), { network: bitcoinjs.networks.testnet } ).publicKey, network: bitcoinjs.networks.testnet }).address;
-		}
+            function getNativeSegwitAddressFromPrivkeyHex( privkeyhex ) {
+                return bitcoinjs.payments.p2wpkh({ pubkey: bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( privkeyhex, "hex" ), { network: bitcoinjs.networks.testnet } ).publicKey, network: bitcoinjs.networks.testnet }).address;
+            }
 
-		function getPrivkeyHexFromPath( backupwords, path, index ) {
-		            //standard segwit path is m/84'/0'/0'/0 so “path” should be 84'/0'/0' and “index” 0
-		        var seed = bip39.mnemonicToSeedSync( backupwords );
-		        var node = bip32.fromSeed( seed );
-		        var path = "m/" + path + "/" + index;
-		        var root = node;
-		        var child = root.derivePath( path );
-		        return computeRawPrivkey( child );
-		}
+            function getPrivkeyHexFromPath( backupwords, path, index ) {
+                //standard segwit path is m/84'/0'/0'/0 so “path” should be 84'/0'/0' and “index” 0
+                var seed = bip39.mnemonicToSeedSync( backupwords );
+                var node = bip32.fromSeed( seed );
+                var path = "m/" + path + "/" + index;
+                var root = node;
+                var child = root.derivePath( path );
+                return computeRawPrivkey( child );
+            }
 
-		function getAddressFromPath( backupwords, path, index ) {
-		        var privkey = getPrivkeyHexFromPath( backupwords, path, index );
-		        var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
-		        return address;
-		}
-	</script>
-	<script>
-		/*
-		Participants is an array of objects that look like this:
-				var participant = {}
-		        participant[ "amount" ] = coinjoin_amount;
-                participant[ "num_of_participants" ] = num_of_participants;
-                participant[ "pubkey" ] = pubkey;
-                participant[ "destination_address" ] = destination_address;
-                participant[ "numhash" ] = numhash;
-                var utxos = [];
-                var utxo_1 = {}
-                utxo_1[ "txid" ] = txid;
-                utxo_1[ "txindex" ] = txindex;
-                utxo_1[ "value" ] = 1000;
-				utxos.push( utxo_1 );
-                var utxo_2 = {}
-                utxo_2[ "txid" ] = txid;
-                utxo_2[ "txindex" ] = txindex;
-                utxo_2[ "value" ] = 3000;
-				utxos.push( utxo_2 );
-                participant[ "utxos" ] = utxos;
-                participant[ "change_address" ] = change_address;
-                participant[ "change_amount" ] = change_amount;
-				//note that the sum of all utxos added together should be greater than coinjoin_amount
-				//note also that change_amount, if it exists, should be the difference between coinjoin_amount and the sum of the utxos contributed by this participant
-		*/
-		function shuffleArray(array) {
-		    for (let i = array.length - 1; i > 0; i--) {
-		        const j = Math.floor(Math.random() * (i + 1));
-		        [array[i], array[j]] = [array[j], array[i]];
-		    }
-		}
-        function startCoinjoin( amount, inputs, outputs ) {
-        	shuffleArray( inputs );
-        	shuffleArray( outputs );
-            var psbt = new bitcoinjs.Psbt({network: bitcoinjs.networks.testnet});
-            inputs.forEach( function( utxo ) {
-                psbt.addInput({
-                    hash: utxo[ "tx_id" ],
-                    index: utxo[ "output_number" ],
-                    witnessUtxo: {
-                        script: buffer.Buffer.from( '0014' +
-                            bitcoinjs.crypto.hash160( buffer.Buffer.from( utxo[ "pubkey" ], "hex" ) ).toString( "hex" ), "hex" ),
-                        value: utxo[ "amount" ]
-                    },
+            function getAddressFromPath( backupwords, path, index ) {
+                var privkey = getPrivkeyHexFromPath( backupwords, path, index );
+                var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                return address;
+            }
+            function shuffleArray(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+            }
+            function startCoinjoin( amount, inputs, outputs ) {
+                shuffleArray( inputs );
+                shuffleArray( outputs );
+                var psbt = new bitcoinjs.Psbt({network: bitcoinjs.networks.testnet});
+                inputs.forEach( function( utxo ) {
+                    psbt.addInput({
+                        hash: utxo[ "tx_id" ],
+                        index: utxo[ "output_number" ],
+                        witnessUtxo: {
+                            script: buffer.Buffer.from( '0014' +
+                                bitcoinjs.crypto.hash160( buffer.Buffer.from( utxo[ "pubkey" ], "hex" ) ).toString( "hex" ), "hex" ),
+                            value: utxo[ "amount" ]
+                        },
+                    });
                 });
-            });
-            outputs.forEach( function( output ) {
-                psbt.addOutput({
-                    address: output[ 0 ],
-                    value: output[ 1 ],
+                outputs.forEach( function( output ) {
+                    psbt.addOutput({
+                        address: output[ 0 ],
+                        value: output[ 1 ],
+                    });
                 });
-            });
-            return psbt.toHex();
-        }
-        function signCoinjoin( amount, inputs, outputs ) {
-            var psbt = new bitcoinjs.Psbt({network: bitcoinjs.networks.testnet});
-            inputs.forEach( function( utxo ) {
-                psbt.addInput({
-                    hash: utxo[ "tx_id" ],
-                    index: utxo[ "output_number" ],
-                    witnessUtxo: {
-                        script: buffer.Buffer.from( '0014' +
-                            bitcoinjs.crypto.hash160( buffer.Buffer.from( utxo[ "pubkey" ], "hex" ) ).toString( "hex" ), "hex" ),
-                        value: utxo[ "amount" ]
-                    },
+                return psbt.toHex();
+            }
+            function signCoinjoin( amount, inputs, outputs ) {
+                var psbt = new bitcoinjs.Psbt({network: bitcoinjs.networks.testnet});
+                inputs.forEach( function( utxo ) {
+                    psbt.addInput({
+                        hash: utxo[ "tx_id" ],
+                        index: utxo[ "output_number" ],
+                        witnessUtxo: {
+                            script: buffer.Buffer.from( '0014' +
+                                bitcoinjs.crypto.hash160( buffer.Buffer.from( utxo[ "pubkey" ], "hex" ) ).toString( "hex" ), "hex" ),
+                            value: utxo[ "amount" ]
+                        },
+                    });
                 });
-            });
-            outputs.forEach( function( output ) {
-                psbt.addOutput({
-                    address: output[ 0 ],
-                    value: output[ 1 ],
+                outputs.forEach( function( output ) {
+                    psbt.addOutput({
+                        address: output[ 0 ],
+                        value: output[ 1 ],
+                    });
                 });
-            });
-            inputs.forEach( function( input, index ) {
-            	if ( input[ "privkey" ] ) {
-		            psbt.signInput( index, bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( input[ "privkey" ], "hex" ) ) );
-		        }
-            });
-            return psbt.toHex();
-        }
-		function cosignCoinjoin( psbt ) {
-		    psbt.txInputs.forEach( function( input, index ) {
-		        var input_hash = input[ "hash" ].toString( "hex" );
-		        input_hash = input_hash.match( /[a-fA-F0-9]{2}/g ).reverse().join( '' );
-		        var my_utxos = [];
-		        JSON.parse( sessionStorage.utxos ).forEach( function( address ) {
-		            address[ "utxos" ].forEach( function( utxo ) {
-		                my_utxos.push( [ utxo[ "tx_id" ], utxo[ "output_number" ], utxo[ "privkey" ] ] );
-		            });
-		        });
-		        my_utxos.forEach( function( utxo ) {
-		            if ( input_hash == utxo[ 0 ] && input[ "index" ] == utxo[ 1 ] ) {
-		                psbt.signInput( index, bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( utxo[ 2 ], "hex" ) ) );
-		                console.log( "signature:", psbt.data.inputs[ index ][ "partialSig" ][ 0 ][ "signature" ].toString( "hex" ) );
-		            }
-		        });
-		    });
-            return psbt.toHex();
-		}
-		function amountIPutIn( psbt ) {
-			var amount_i_put_in = 0;
-		    psbt.txInputs.forEach( function( input, index ) {
-		        var input_hash = input[ "hash" ].toString( "hex" );
-		        input_hash = input_hash.match( /[a-fA-F0-9]{2}/g ).reverse().join( '' );
-		        var my_utxos = [];
-		        JSON.parse( sessionStorage.utxos ).forEach( function( address ) {
-		            address[ "utxos" ].forEach( function( utxo ) {
-		                my_utxos.push( [ utxo[ "tx_id" ], utxo[ "output_number" ], utxo[ "privkey" ], utxo[ "amount" ] ] );
-		            });
-		        });
-		        my_utxos.forEach( function( utxo ) {
-		            if ( input_hash == utxo[ 0 ] && input[ "index" ] == utxo[ 1 ] ) {
-		                amount_i_put_in = amount_i_put_in + utxo[ 3 ];
-		            }
-		        });
-		    });
-            return amount_i_put_in;
-		}
-		async function amountIGetOut( psbt ) {
-			var amount_i_get_out = 0;
-			var i; for ( i=0; i<psbt.txOutputs.length; i++ ) {
-		    	var firstaddy = await getFirstUnusedChangeAddress();
-		    	var secondaddy = await getSecondUnusedChangeAddress();
-		    	var myaddresses = [firstaddy, secondaddy];
-		    	if ( myaddresses.includes( psbt.txOutputs[ i ][ "address" ] ) ) {
-		    		amount_i_get_out = amount_i_get_out + psbt.txOutputs[ i ][ "value" ];
-		    	}
-		    }
-            return amount_i_get_out;
-		}
-    </script>
-    <script>
-        function getIdFromPSBT( psbthex ) {
-            var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
-            return bitcoinjs.Transaction.fromHex( psbt.data.getTransaction().toString( "hex" ) ).getId();
-        }
-    </script>
-    <script>
-        function cosignFundingPSBT( psbthex, privkey, mynum ) {
-            var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
-            psbt.signInput( mynum, bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( privkey, "hex" ) ) );
-            return psbt.toHex();
-        }
-    </script>
-    <script>
-        function finalizeFundingPSBT( psbthex ) {
-            var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
-            psbt.finalizeAllInputs();
-            return psbt.extractTransaction().toHex();
-        }
-    </script>
-	<script>
-        function getTransactionsInvolvingAddress( address ) {
-            return new Promise( function( resolve, reject ) {
-                var xhttp = new XMLHttpRequest();
-                xhttp.onreadystatechange = function() {
-                    if ( this.readyState == 4 && ( this.status > 199 && this.status < 300 ) ) {
-                        var json = JSON.parse( xhttp.responseText );
-                        var txs = [];
-                        var i; for ( i=0; i<json.length; i++ ) {
-                            txs.push( json[ i ][ "txid" ] );
-                        }
-                        resolve( JSON.stringify( txs ) );
+                inputs.forEach( function( input, index ) {
+                    if ( input[ "privkey" ] ) {
+                        psbt.signInput( index, bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( input[ "privkey" ], "hex" ) ) );
                     }
-                };
-                xhttp.open("GET", "https://mempool.space/testnet/api/address/" + address + "/txs", true);
-                xhttp.send();
-            });                
-        }
-
-		function getAddressBalance( address ) {
-		        return new Promise( function( resolve, reject ) {
-		                var xhttp = new XMLHttpRequest();
-		                xhttp.onreadystatechange = function() {
-		                        if ( this.readyState == 4 && this.status == 200 ) {
-		                                var json = JSON.parse( xhttp.responseText );
-		                                var fullincome = json[ "chain_stats" ][ "funded_txo_sum" ] + json[ "mempool_stats" ][ "funded_txo_sum" ];
-		                                var fulloutgo = json[ "chain_stats" ][ "spent_txo_sum" ] + json[ "mempool_stats" ][ "spent_txo_sum" ];
-		                                resolve( fullincome - fulloutgo );
-		                        };
-		                }
-		                xhttp.open( "GET", "https://mempool.space/testnet/api/address/" + address, true );
-		                xhttp.send();
-		        });
-		}
-
-		function getTransactionObjectViaTxid( txid ) {
-		        return new Promise( function( resolve, reject ) {
-		                var xhttp = new XMLHttpRequest();
-		                xhttp.onreadystatechange = function() {
-		                        if ( this.readyState == 4 && this.status == 200 ) {
-		                                var tx = JSON.parse( xhttp.responseText );
-		                                resolve( tx );
-		                        };
-		                }
-		                xhttp.open( "GET", "https://mempool.space/testnet/api/tx/" + txid, true );
-		                xhttp.send();
-		        });
-		}
-
-		function getCompressedPubkeyHexFromPrivkeyHex( privkeyhex ) {
-        		return bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( privkeyhex, "hex" ), { network: bitcoinjs.networks.testnet } ).publicKey.toString( "hex" );
-		}
-
-        function txIsACoinjoin( tx ) {
-            if ( tx[ "vin" ].length < 3 || tx[ "vout" ].length < 3 ) return;
-            if ( tx[ "vin" ].length / tx[ "vout" ].length < 0.67 ) return;
-            var output_values = [];
-            tx[ "vout" ].forEach( function( output ) {
-                if ( !( output.value in output_values ) ) {
-                    output_values[ output.value ] = 0;
-                } else {
-                    output_values[ output.value ] = output_values[ output.value ] + 1;
+                });
+                return psbt.toHex();
+            }
+            function cosignCoinjoin( psbt ) {
+                psbt.txInputs.forEach( function( input, index ) {
+                    var input_hash = input[ "hash" ].toString( "hex" );
+                    input_hash = input_hash.match( /[a-fA-F0-9]{2}/g ).reverse().join( '' );
+                    var my_utxos = [];
+                    JSON.parse( sessionStorage.utxos ).forEach( function( address ) {
+                        address[ "utxos" ].forEach( function( utxo ) {
+                            my_utxos.push( [ utxo[ "tx_id" ], utxo[ "output_number" ], utxo[ "privkey" ] ] );
+                        });
+                    });
+                    my_utxos.forEach( function( utxo ) {
+                        if ( input_hash == utxo[ 0 ] && input[ "index" ] == utxo[ 1 ] ) {
+                            psbt.signInput( index, bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( utxo[ 2 ], "hex" ) ) );
+                            console.log( "signature:", psbt.data.inputs[ index ][ "partialSig" ][ 0 ][ "signature" ].toString( "hex" ) );
+                        }
+                    });
+                });
+                return psbt.toHex();
+            }
+            function amountIPutIn( psbt ) {
+                var amount_i_put_in = 0;
+                psbt.txInputs.forEach( function( input, index ) {
+                    var input_hash = input[ "hash" ].toString( "hex" );
+                    input_hash = input_hash.match( /[a-fA-F0-9]{2}/g ).reverse().join( '' );
+                    var my_utxos = [];
+                    JSON.parse( sessionStorage.utxos ).forEach( function( address ) {
+                        address[ "utxos" ].forEach( function( utxo ) {
+                            my_utxos.push( [ utxo[ "tx_id" ], utxo[ "output_number" ], utxo[ "privkey" ], utxo[ "amount" ] ] );
+                        });
+                    });
+                    my_utxos.forEach( function( utxo ) {
+                        if ( input_hash == utxo[ 0 ] && input[ "index" ] == utxo[ 1 ] ) {
+                            amount_i_put_in = amount_i_put_in + utxo[ 3 ];
+                        }
+                    });
+                });
+                return amount_i_put_in;
+            }
+            async function amountIGetOut( psbt ) {
+                var amount_i_get_out = 0;
+                var i; for ( i=0; i<psbt.txOutputs.length; i++ ) {
+                    var firstaddy = await getFirstUnusedChangeAddress();
+                    var secondaddy = await getSecondUnusedChangeAddress();
+                    var myaddresses = [firstaddy, secondaddy];
+                    if ( myaddresses.includes( psbt.txOutputs[ i ][ "address" ] ) ) {
+                        amount_i_get_out = amount_i_get_out + psbt.txOutputs[ i ][ "value" ];
+                    }
                 }
-            });
-            if ( Object.keys( output_values ).length <= tx[ "vout" ].length - 2 ) return true;
-            return false;
-        }
+                return amount_i_get_out;
+            }
+            function getIdFromPSBT( psbthex ) {
+                var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
+                return bitcoinjs.Transaction.fromHex( psbt.data.getTransaction().toString( "hex" ) ).getId();
+            }
+            function cosignFundingPSBT( psbthex, privkey, mynum ) {
+                var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
+                psbt.signInput( mynum, bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( privkey, "hex" ) ) );
+                return psbt.toHex();
+            }
+            function finalizeFundingPSBT( psbthex ) {
+                var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
+                psbt.finalizeAllInputs();
+                return psbt.extractTransaction().toHex();
+            }
+            function getTransactionsInvolvingAddress( address ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && ( this.status > 199 && this.status < 300 ) ) {
+                            var json = JSON.parse( xhttp.responseText );
+                            var txs = [];
+                            var i; for ( i=0; i<json.length; i++ ) {
+                                txs.push( json[ i ][ "txid" ] );
+                            }
+                            resolve( JSON.stringify( txs ) );
+                        }
+                    };
+                    xhttp.open("GET", "https://mempool.space/testnet/api/address/" + address + "/txs", true);
+                    xhttp.send();
+                });                
+            }
+            function getAddressBalance( address ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && this.status == 200 ) {
+                            var json = JSON.parse( xhttp.responseText );
+                            var fullincome = json[ "chain_stats" ][ "funded_txo_sum" ] + json[ "mempool_stats" ][ "funded_txo_sum" ];
+                            var fulloutgo = json[ "chain_stats" ][ "spent_txo_sum" ] + json[ "mempool_stats" ][ "spent_txo_sum" ];
+                            resolve( fullincome - fulloutgo );
+                        };
+                    }
+                    xhttp.open( "GET", "https://mempool.space/testnet/api/address/" + address, true );
+                    xhttp.send();
+                });
+            }
 
-        function getCoinjoinValue( tx ) {
-            var output_values = {}
-            var highest_num = 0;
-            var cj_value = 0;
-            tx[ "vout" ].forEach( function( output ) {
-                if ( !( output.value in output_values ) ) {
-                    output_values[ output.value ] = 0;
-                } else {
-                    output_values[ output.value ] = output_values[ output.value ] + 1;
+            function getTransactionObjectViaTxid( txid ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && this.status == 200 ) {
+                            var tx = JSON.parse( xhttp.responseText );
+                            resolve( tx );
+                        };
+                    }
+                    xhttp.open( "GET", "https://mempool.space/testnet/api/tx/" + txid, true );
+                    xhttp.send();
+                });
+            }
+
+            function getCompressedPubkeyHexFromPrivkeyHex( privkeyhex ) {
+                return bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( privkeyhex, "hex" ), { network: bitcoinjs.networks.testnet } ).publicKey.toString( "hex" );
+            }
+
+            function txIsACoinjoin( tx ) {
+                if ( tx[ "vin" ].length < 3 || tx[ "vout" ].length < 3 ) return;
+                if ( tx[ "vin" ].length / tx[ "vout" ].length < 0.67 ) return;
+                var output_values = [];
+                tx[ "vout" ].forEach( function( output ) {
+                    if ( !( output.value in output_values ) ) {
+                        output_values[ output.value ] = 0;
+                    } else {
+                        output_values[ output.value ] = output_values[ output.value ] + 1;
+                    }
+                });
+                if ( Object.keys( output_values ).length <= tx[ "vout" ].length - 2 ) return true;
+                return false;
+            }
+
+            function getCoinjoinValue( tx ) {
+                var output_values = {}
+                var highest_num = 0;
+                var cj_value = 0;
+                tx[ "vout" ].forEach( function( output ) {
+                    if ( !( output.value in output_values ) ) {
+                        output_values[ output.value ] = 0;
+                    } else {
+                        output_values[ output.value ] = output_values[ output.value ] + 1;
+                    }
+                });
+                Object.keys( output_values ).forEach( function( key ) {
+                    if ( output_values[ key ] <= highest_num ) return;
+                    highest_num = output_values[ key ];
+                    cj_value = Number( key );
+                });
+                return cj_value;
+            }
+
+            async function getUTXOs( privkey ) {
+                var pubkey = getCompressedPubkeyHexFromPrivkeyHex( privkey );
+                var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && this.status == 200 ) {
+                            var obj = {}
+                            obj[ "address" ] = address;
+                            obj[ "utxos" ] = [];
+                            var esplorautxos = JSON.parse( xhttp.responseText );
+                            esplorautxos.forEach( async function( item, index ) {
+                                var tx = await getTransactionObjectViaTxid( item[ "txid" ] );
+                                //if ( !txIsACoinjoin( tx ) ) return;
+                                var coinjoin_value = getCoinjoinValue( tx );
+                                //if ( item[ "value" ] != coinjoin_value ) return;
+                                //if ( item[ "value" ] == coinjoin_value ) console.log( `I am adding to my balance one or more outputs of this value: ${coinjoin_value} from this tx: ${item[ "txid" ]}` );
+                                var utxo = {}
+                                utxo[ "tx_id" ] = item[ "txid" ];
+                                utxo[ "output_number" ] = item[ "vout" ];
+                                utxo[ "amount" ] = item[ "value" ];
+                                utxo[ "privkey" ] = privkey;
+                                utxo[ "pubkey" ] = pubkey;
+                                obj[ "utxos" ].push( utxo );
+                            });
+                            resolve( obj );
+                        }
+                    }
+                    xhttp.open( "GET", "https://mempool.space/testnet/api/address/" + address + "/utxo", true );
+                    xhttp.send();
+                });
+            }
+
+            async function getAvailableUtxosFromReceivePath() {
+                return new Promise( async function( resolve, reject ) {
+                    var available_utxos = [];
+                    var i1 = 0;
+                    var i2 = 0;
+                    var i; for ( i=0; i<100000; i++ ) {
+                        if ( i2 > 20 ) {
+                                break;
+                        }
+                        var backupwords = localStorage[ "backup_words" ];
+                        var path = "84'/0'/0'";
+                        var privkey = getPrivkeyHexFromPath( backupwords, path, i1 + i2 );
+                        var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                        var balance = await getAddressBalance( address );
+                        if ( balance < 1 ) {
+                            i2 = Number( i2 ) + 1;
+                        } else {
+                            i1 = Number( i1 ) + 1;
+                            var utxos_in_this_address = await getUTXOs( privkey );
+                            available_utxos.push( utxos_in_this_address );
+                        }
+                    }
+                    resolve( available_utxos );
+                });
+            }
+
+            async function getAvailableUtxosFromChangePath() {
+                return new Promise( async function( resolve, reject ) {
+                    var available_utxos = [];
+                    var i1 = 0;
+                    var i2 = 0;
+                    var i; for ( i=0; i<100000; i++ ) {
+                        if ( i2 > 20 ) {
+                            break;
+                        }
+                        var backupwords = localStorage[ "backup_words" ];
+                        var path = "84'/0'/1'";
+                        var privkey = getPrivkeyHexFromPath( backupwords, path, i1 + i2 );
+                        var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                        var balance = await getAddressBalance( address );
+                        if ( balance < 1 ) {
+                            i2 = Number( i2 ) + 1;
+                        } else {
+                            i1 = Number( i1 ) + 1;
+                            var utxos_in_this_address = await getUTXOs( privkey );
+                            available_utxos.push( utxos_in_this_address );
+                        }
+                    }
+                    resolve( available_utxos );
+                });
+            }
+
+            async function checkAddresses() {
+                var available_utxos_1 = await getAvailableUtxosFromReceivePath();
+                var available_utxos_2 = await getAvailableUtxosFromChangePath();
+                available_utxos_2.forEach( function( item ) {
+                    available_utxos_1.push( item );
+                });
+                sessionStorage[ "utxos" ] = JSON.stringify( available_utxos_1 );
+            }
+
+            function didThisAddressEverHaveMoney( address ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && this.status == 200 ) {
+                            var json = JSON.parse( xhttp.responseText );
+                            if ( json[ "chain_stats" ][ "funded_txo_count" ] > 0 || json[ "mempool_stats" ][ "funded_txo_count" ] > 0 ) {
+                                resolve( true );
+                            }
+                            resolve( false );
+                        }
+                    };
+                    xhttp.open( "GET", "https://mempool.space/testnet/api/address/" + address, true );
+                    xhttp.send();
+                });
+            }
+
+            async function getFirstUnusedAddress() {
+                var i; for ( i=0; i<100000; i++ ) {
+                    var backupwords = localStorage[ "backup_words" ];
+                    var path = "84'/0'/0'";
+                    var privkey = getPrivkeyHexFromPath( backupwords, path, i );
+                    var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                    var hadMoney = await didThisAddressEverHaveMoney( address );
+                    if ( !hadMoney ) {
+                        return address;
+                    }
                 }
-            });
-            Object.keys( output_values ).forEach( function( key ) {
-                if ( output_values[ key ] <= highest_num ) return;
-                highest_num = output_values[ key ];
-                cj_value = Number( key );
-            });
-            return cj_value;
-        }
+            }
 
-		async function getUTXOs( privkey ) {
-		        var pubkey = getCompressedPubkeyHexFromPrivkeyHex( privkey );
-		        var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
-		        return new Promise( function( resolve, reject ) {
-		                var xhttp = new XMLHttpRequest();
-		                xhttp.onreadystatechange = function() {
-		                        if ( this.readyState == 4 && this.status == 200 ) {
-		                                var obj = {}
-		                                obj[ "address" ] = address;
-		                                obj[ "utxos" ] = [];
-		                                var esplorautxos = JSON.parse( xhttp.responseText );
-		                                esplorautxos.forEach( async function( item, index ) {
-		                                	    var tx = await getTransactionObjectViaTxid( item[ "txid" ] );
-		                                		//if ( !txIsACoinjoin( tx ) ) return;
-		                                		var coinjoin_value = getCoinjoinValue( tx );
-		                                		//if ( item[ "value" ] != coinjoin_value ) return;
-		                                		//if ( item[ "value" ] == coinjoin_value ) console.log( `I am adding to my balance one or more outputs of this value: ${coinjoin_value} from this tx: ${item[ "txid" ]}` );
-		                                        var utxo = {}
-		                                        utxo[ "tx_id" ] = item[ "txid" ];
-		                                        utxo[ "output_number" ] = item[ "vout" ];
-		                                        utxo[ "amount" ] = item[ "value" ];
-		                                        utxo[ "privkey" ] = privkey;
-		                                        utxo[ "pubkey" ] = pubkey;
-		                                        obj[ "utxos" ].push( utxo );
-		                                });
-		                                resolve( obj );
-		                        }
-		                }
-		                xhttp.open( "GET", "https://mempool.space/testnet/api/address/" + address + "/utxo", true );
-		                xhttp.send();
-		        });
-		}
+            async function getFirstUnusedChangeAddress() {
+                var i; for ( i=0; i<100000; i++ ) {
+                    var backupwords = localStorage[ "backup_words" ];
+                    var path = "84'/0'/1'";
+                    var privkey = getPrivkeyHexFromPath( backupwords, path, i );
+                    var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                    var hadMoney = await didThisAddressEverHaveMoney( address );
+                    if ( !hadMoney ) {
+                        return address;
+                    }
+                }
+            }
 
-		async function getAvailableUtxosFromReceivePath() {
-				return new Promise( async function( resolve, reject ) {
-						var available_utxos = [];
-		                var i1 = 0;
-		                var i2 = 0;
-				        var i; for ( i=0; i<100000; i++ ) {
-				                if ( i2 > 20 ) {
-				                        break;
-				                }
-				                var backupwords = localStorage[ "backup_words" ];
-				                var path = "84'/0'/0'";
-				                var privkey = getPrivkeyHexFromPath( backupwords, path, i1 + i2 );
-				                var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
-				                var balance = await getAddressBalance( address );
-				                if ( balance < 1 ) {
-				                        i2 = Number( i2 ) + 1;
-				                } else {
-				                		i1 = Number( i1 ) + 1;
-				                        var utxos_in_this_address = await getUTXOs( privkey );
-				                        available_utxos.push( utxos_in_this_address );
-				                }
-				        }
-				        resolve( available_utxos );
-				});
-		}
+            async function getSecondUnusedChangeAddress() {
+                var i; for ( i=0; i<100000; i++ ) {
+                    var backupwords = localStorage[ "backup_words" ];
+                    var path = "84'/0'/1'";
+                    var privkey = getPrivkeyHexFromPath( backupwords, path, i );
+                    var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                    var hadMoney = await didThisAddressEverHaveMoney( address );
+                    if ( !hadMoney ) {
+                        var privkey2 = getPrivkeyHexFromPath( backupwords, path, i + 1 );
+                        var address2 = getNativeSegwitAddressFromPrivkeyHex( privkey2 );
+                        return address2;
+                    }
+                }
+            }
 
-		async function getAvailableUtxosFromChangePath() {
-				return new Promise( async function( resolve, reject ) {
-						var available_utxos = [];
-		                var i1 = 0;
-		                var i2 = 0;
-				        var i; for ( i=0; i<100000; i++ ) {
-				                if ( i2 > 20 ) {
-				                        break;
-				                }
-				                var backupwords = localStorage[ "backup_words" ];
-				                var path = "84'/0'/1'";
-				                var privkey = getPrivkeyHexFromPath( backupwords, path, i1 + i2 );
-				                var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
-				                var balance = await getAddressBalance( address );
-				                if ( balance < 1 ) {
-				                        i2 = Number( i2 ) + 1;
-				                } else {
-				                		i1 = Number( i1 ) + 1;
-				                        var utxos_in_this_address = await getUTXOs( privkey );
-				                        available_utxos.push( utxos_in_this_address );
-				                }
-				        }
-				        resolve( available_utxos );
-				});
-		}
+            async function getHistory() {
+                var history = [];
+                var i; for ( i=0; i<100000; i++ ) {
+                    var backupwords = localStorage[ "backup_words" ];
+                    var path = "84'/0'/0'";
+                    var privkey = getPrivkeyHexFromPath( backupwords, path, i );
+                    var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                    var indhist = await getData( `https://mempool.space/testnet/api/address/${address}/txs` );
+                    history.push( [ address, JSON.parse( indhist ) ] );
+/*
+                    var path2 = "84'/0'/1'";
+                    var privkey2 = getPrivkeyHexFromPath( backupwords, path2, i );
+                    var address2 = getNativeSegwitAddressFromPrivkeyHex( privkey2 );
+                    var indhist = await getData( "https://mempool.space/testnet/api/address/" + address2 );
+                    history.push( JSON.parse( indhist ) );
+*/
+                    var hadMoney = await didThisAddressEverHaveMoney( address );
+                    if ( !hadMoney ) {
+                        var txhistory = [];
+                        history.forEach( function( item ) {
+                            item[ 1 ].forEach( function( tx ) {
+                                var is_incoming = false;
+                                tx[ "vout" ].forEach( function( output ) {
+                                    if ( output[ "scriptpubkey_address" ] == item[ 0 ] ) {
+                                        is_incoming = true;
+                                        txhistory.push( [ "in", output[ "value" ], tx[ "status" ][ "block_time" ], item[ 0 ] ] );
+                                    }
+                                });
+                                if ( !is_incoming ) {
+                                    var fee = 0;
+                                    tx[ "vin" ].forEach( function( input ) {
+                                        fee = fee + input[ "prevout" ][ "value" ];
+                                    });
+                                    tx[ "vout" ].forEach( function( output ) {
+                                        fee = fee - output[ "value" ];
+                                    });
+                                    txhistory.push( [ "out", tx[ "vout" ][ 0 ][ "value" ], tx[ "status" ][ "block_time" ], item[ 0 ], fee ] );
+                                }
+                            });
+                        });
+                        txhistory.sort( function( a, b ) {
+                            var num = a[ 2 ] - b[ 2 ];
+                            if ( num == 0 ) {
+                                num = 1;
+                            }
+                            return num;
+                        });
+                        txhistory.reverse();
+                        return txhistory;
+                    }
+                }
+            }
 
-		async function checkAddresses() {
-				var available_utxos_1 = await getAvailableUtxosFromReceivePath();
-				var available_utxos_2 = await getAvailableUtxosFromChangePath();
-				available_utxos_2.forEach( function( item ) {
-					available_utxos_1.push( item );
-				});
-		        sessionStorage[ "utxos" ] = JSON.stringify( available_utxos_1 );
-		}
+            async function displayBalance() {
+                await checkAddresses();
+                var utxos = JSON.parse( sessionStorage[ "utxos" ] );
+                var balance = 0;
+                alt_utxo_list = [];
+                utxos.forEach( function( item ) {
+                    var i; for ( i=0; i<item[ "utxos" ].length; i++ ) {
+                        balance = balance + Number( item[ "utxos" ][ i ][ "amount" ] );
+                        alt_utxo_list.push( item[ "utxos" ][ i ] );
+                    }
+                });
+                sessionStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
+                return Number( balance ).toString();
+            }
 
-		function didThisAddressEverHaveMoney( address ) {
-			    return new Promise( function( resolve, reject ) {
-				        var xhttp = new XMLHttpRequest();
-				        xhttp.onreadystatechange = function() {
-					            if ( this.readyState == 4 && this.status == 200 ) {
-						                var json = JSON.parse( xhttp.responseText );
-							            if ( json[ "chain_stats" ][ "funded_txo_count" ] > 0 || json[ "mempool_stats" ][ "funded_txo_count" ] > 0 ) {
-								                resolve( true );
-							            }
-						                resolve( false );
-					            }
-				        };
-				        xhttp.open( "GET", "https://mempool.space/testnet/api/address/" + address, true );
-				        xhttp.send();
-			    });
-		}
+            async function displayQuickBalance() {
+                var balance = 0;
+                if ( sessionStorage[ "utxos" ] ) {
+                    var utxos = JSON.parse( sessionStorage[ "utxos" ] );
+                } else {
+                    var utxos = [];
+                    var loading = true;
+                }
+                alt_utxo_list = [];
+                utxos.forEach( function( item ) {
+                    var i; for ( i=0; i<item[ "utxos" ].length; i++ ) {
+                        balance = balance + Number( item[ "utxos" ][ i ][ "amount" ] );
+                        alt_utxo_list.push( item[ "utxos" ][ i ] );
+                    }
+                });
+                sessionStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
+                if ( loading ) {
+                    return -1;
+                }
+                return Number( balance ).toString();
+            }
 
-		async function getFirstUnusedAddress() {
-		        var i; for ( i=0; i<100000; i++ ) {
-		                var backupwords = localStorage[ "backup_words" ];
-		                var path = "84'/0'/0'";
-		                var privkey = getPrivkeyHexFromPath( backupwords, path, i );
-		                var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
-		                var hadMoney = await didThisAddressEverHaveMoney( address );
-		                if ( !hadMoney ) {
-		                        return address;
-		                }
-		        }
-		}
+            function pushBTCpmt( rawtx ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && ( this.status > 199 && this.status < 300 ) ) {
+                            var response = this.responseText;
+                            resolve( response );
+                        }
+                    };
+                    xhttp.open( "POST", "https://mempool.space/testnet/api/tx", true );
+                    xhttp.send( rawtx );
+                });
+            }
 
-		async function getFirstUnusedChangeAddress() {
-		        var i; for ( i=0; i<100000; i++ ) {
-		                var backupwords = localStorage[ "backup_words" ];
-		                var path = "84'/0'/1'";
-		                var privkey = getPrivkeyHexFromPath( backupwords, path, i );
-		                var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
-		                var hadMoney = await didThisAddressEverHaveMoney( address );
-		                if ( !hadMoney ) {
-		                        return address;
-		                }
-		        }
-		}
+            function craftTransaction( selected_utxos, to_amount, to_address, change_address, change_amount, sats_per_byte ) {
+                if ( !to_amount ) {
+                    return;
+                }
+                if ( change_amount != 0 && change_address != "none" ) {
+                    var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet });
+                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
+                       psbt.addInput({
+                            hash: selected_utxos[ i ][ "tx_id" ],
+                            index: selected_utxos[ i ][ "output_number" ],
+                            witnessUtxo: {
+                                script: buffer.Buffer.from( '0014' + bitcoinjs.crypto.ripemd160( bitcoinjs.crypto.sha256( buffer.Buffer.from( selected_utxos[ i ][ "pubkey" ], "hex" ) ) ).toString( 'hex' ), 'hex' ),
+                                value: selected_utxos[ i ][ "amount" ],
+                            },
+                       });
+                    }
+                    psbt.addOutput({
+                        address: to_address,
+                        value: to_amount,
+                    });
+                    psbt.addOutput({
+                        address: change_address,
+                        value: change_amount,
+                    });
+                    var keyPairSenders = [];
+                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
+                        keyPairSenders.push( bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( selected_utxos[ i ][ "privkey" ], "hex" ), bitcoinjs.networks.testnet ) );
+                    }
+                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
+                        psbt.signInput( i, keyPairSenders[ i ] );
+                    }
+                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
+                        psbt.validateSignaturesOfInput( i );
+                    }
+                    psbt.finalizeAllInputs();
+                    return psbt.extractTransaction().toHex();
+                } else {
+                    var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet });
+                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
+                       psbt.addInput({
+                            hash: selected_utxos[ i ][ "tx_id" ],
+                            index: selected_utxos[ i ][ "output_number" ],
+                            witnessUtxo: {
+                                script: buffer.Buffer.from( '0014' + bitcoinjs.crypto.ripemd160( bitcoinjs.crypto.sha256( buffer.Buffer.from( selected_utxos[ i ][ "pubkey" ], "hex" ) ) ).toString( 'hex' ), 'hex' ),
+                                value: selected_utxos[ i ][ "amount" ],
+                            },
+                       });
+                    }
+                    psbt.addOutput({
+                        address: to_address,
+                        value: to_amount,
+                    });
+                    var keyPairSenders = [];
+                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
+                        keyPairSenders.push( bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( selected_utxos[ i ][ "privkey" ], "hex" ), bitcoinjs.networks.testnet ) );
+                    }
+                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
+                        psbt.signInput( i, keyPairSenders[ i ] );
+                    }
+                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
+                        psbt.validateSignaturesOfInput( i );
+                    }
+                    psbt.finalizeAllInputs();
+                    return psbt.extractTransaction().toHex();
+                }
+            }
 
-		async function getSecondUnusedChangeAddress() {
-		        var i; for ( i=0; i<100000; i++ ) {
-		                var backupwords = localStorage[ "backup_words" ];
-		                var path = "84'/0'/1'";
-		                var privkey = getPrivkeyHexFromPath( backupwords, path, i );
-		                var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
-		                var hadMoney = await didThisAddressEverHaveMoney( address );
-		                if ( !hadMoney ) {
-				                var privkey2 = getPrivkeyHexFromPath( backupwords, path, i + 1 );
-				                var address2 = getNativeSegwitAddressFromPrivkeyHex( privkey2 );
-		                        return address2;
-		                }
-		        }
-		}
-
-		async function displayBalance() {
-		        await checkAddresses();
-		        var utxos = JSON.parse( sessionStorage[ "utxos" ] );
-		        var balance = 0;
-		        alt_utxo_list = [];
-		        utxos.forEach( function( item ) {
-		                var i; for ( i=0; i<item[ "utxos" ].length; i++ ) {
-		                        balance = balance + Number( item[ "utxos" ][ i ][ "amount" ] );
-		                        alt_utxo_list.push( item[ "utxos" ][ i ] );
-		                }
-		        });
-		        sessionStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
-		        return Number( balance ).toString();
-		}
-
-        function pushBTCpmt( rawtx ) {
-			return new Promise( function( resolve, reject ) {
-	            var xhttp = new XMLHttpRequest();
-	            xhttp.onreadystatechange = function() {
-	                if ( this.readyState == 4 && ( this.status > 199 && this.status < 300 ) ) {
-	                    var response = this.responseText;
-	                    resolve( response );
-	                }
-	            };
-	            xhttp.open( "POST", "https://mempool.space/testnet/api/tx", true );
-	            xhttp.send( rawtx );
-	        });
-        }
-
-		function craftTransaction( selected_utxos, to_amount, to_address, change_address, change_amount, sats_per_byte ) {
-		        if ( !to_amount ) {
-		                return;
-		        }
-		        if ( change_amount != 0 && change_address != "none" ) {
-		           var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet });
-		           var i; for ( i=0; i<selected_utxos.length; i++ ) {
-		                   psbt.addInput({
-		                        hash: selected_utxos[ i ][ "tx_id" ],
-		                        index: selected_utxos[ i ][ "output_number" ],
-		                        witnessUtxo: {
-		                                script: buffer.Buffer.from( '0014' + bitcoinjs.crypto.ripemd160( bitcoinjs.crypto.sha256( buffer.Buffer.from( selected_utxos[ i ][ "pubkey" ], "hex" ) ) ).toString( 'hex' ), 'hex' ),
-		                                value: selected_utxos[ i ][ "amount" ],
-		                        },
-		                   });
-		           }
-		           psbt.addOutput({
-		                        address: to_address,
-		                        value: to_amount,
-		           });
-		           psbt.addOutput({
-		                        address: change_address,
-		                        value: change_amount,
-		           });
-		           var keyPairSenders = [];
-		           var i; for ( i=0; i<selected_utxos.length; i++ ) {
-		                      keyPairSenders.push( bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( selected_utxos[ i ][ "privkey" ], "hex" ), bitcoinjs.networks.testnet ) );
-		           }
-		           var i; for ( i=0; i<keyPairSenders.length; i++ ) {
-		                      psbt.signInput( i, keyPairSenders[ i ] );
-		           }
-		           var i; for ( i=0; i<keyPairSenders.length; i++ ) {
-		                      psbt.validateSignaturesOfInput( i );
-		           }
-		           psbt.finalizeAllInputs();
-		           return psbt.extractTransaction().toHex();
-		        } else {
-		           var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet });
-		           var i; for ( i=0; i<selected_utxos.length; i++ ) {
-		                   psbt.addInput({
-		                        hash: selected_utxos[ i ][ "tx_id" ],
-		                        index: selected_utxos[ i ][ "output_number" ],
-		                        witnessUtxo: {
-		                                script: buffer.Buffer.from( '0014' + bitcoinjs.crypto.ripemd160( bitcoinjs.crypto.sha256( buffer.Buffer.from( selected_utxos[ i ][ "pubkey" ], "hex" ) ) ).toString( 'hex' ), 'hex' ),
-		                                value: selected_utxos[ i ][ "amount" ],
-		                        },
-		                   });
-		           }
-		           psbt.addOutput({
-		                        address: to_address,
-		                        value: to_amount,
-		           });
-		           var keyPairSenders = [];
-		           var i; for ( i=0; i<selected_utxos.length; i++ ) {
-		                      keyPairSenders.push( bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( selected_utxos[ i ][ "privkey" ], "hex" ), bitcoinjs.networks.testnet ) );
-		           }
-		           var i; for ( i=0; i<keyPairSenders.length; i++ ) {
-		                      psbt.signInput( i, keyPairSenders[ i ] );
-		           }
-		           var i; for ( i=0; i<keyPairSenders.length; i++ ) {
-		                      psbt.validateSignaturesOfInput( i );
-		           }
-		           psbt.finalizeAllInputs();
-		           return psbt.extractTransaction().toHex();
-		        }
-		}
-
-		async function contributeUtxosToCoinjoin( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, this_addition_is_being_done_because_of_a_change_address = false, this_addition_is_being_done_after_the_total_transaction_size_is_known = false, total_transaction_size = 0, to_amount ) {
-		        if ( !amount_plus_fee || amount_plus_fee == "" ) {
-		                return;   
-		        }
-		        var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
-		        var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
-		        var original_amount_plus_fee = amount_plus_fee;
-		        console.log( "amount plus fee:", amount_plus_fee );
-		        console.log( "utxos available for this transaction:", utxos_available_for_this_transaction );
-		        console.log( "utxos in this transaction:", utxos_in_this_transaction );
-		        if ( utxos_available_for_this_transaction.length < 1 ) {
-		                alert( "You do not have enough money to send this transaction. Please top up your wallet or send a smaller amount." );
-		                return;
-		        }
+            async function contributeUtxosToCoinjoin( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, this_addition_is_being_done_because_of_a_change_address = false, this_addition_is_being_done_after_the_total_transaction_size_is_known = false, total_transaction_size = 0, to_amount ) {
+                if ( !amount_plus_fee || amount_plus_fee == "" ) {
+                    return;   
+                }
+                var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
+                var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
+                var original_amount_plus_fee = amount_plus_fee;
+                console.log( "amount plus fee:", amount_plus_fee );
+                console.log( "utxos available for this transaction:", utxos_available_for_this_transaction );
+                console.log( "utxos in this transaction:", utxos_in_this_transaction );
+                if ( utxos_available_for_this_transaction.length < 1 ) {
+                    alert( "You do not have enough money to send this transaction. Please top up your wallet or send a smaller amount." );
+                    return;
+                }
                 var largest_utxo_value = 0;
                 var largest_utxo_indexnum = 0;
                 var i; for ( i=0; i<utxos_available_for_this_transaction.length; i++ ) {
-                        if ( utxos_available_for_this_transaction[ i ][ "amount" ] > largest_utxo_value ) {
-                                largest_utxo_value = utxos_available_for_this_transaction[ i ][ "amount" ];
-                                largest_utxo_indexnum = i;
-                        }
+                    if ( utxos_available_for_this_transaction[ i ][ "amount" ] > largest_utxo_value ) {
+                        largest_utxo_value = utxos_available_for_this_transaction[ i ][ "amount" ];
+                        largest_utxo_indexnum = i;
+                    }
                 }
                 console.log( "largest_utxo_indexnum", largest_utxo_indexnum );
                 console.log( "value of largest utxo", utxos_available_for_this_transaction[ largest_utxo_indexnum ][ "amount" ] );
@@ -550,523 +599,1327 @@
                 console.log( "number of utxos in this transaction", utxos_in_this_transaction.length );
                 var sum_of_the_values_of_each_input_to_this_transaction = 0;
                 var i; for ( i=0; i<utxos_in_this_transaction.length; i++ ) {
-                        console.log( "utxo in this transaction whose value we are currently checking so we can sum up the total value of all utxos in this transaction and check if it is greater than or equal to the total amount we are sending including the mining fee (btw the total amount including the mining fee is " + amount_plus_fee + ")", i );
-                        console.log( "current utxo", utxos_in_this_transaction[ i ] );
-                        console.log( "amount of current utxo", utxos_in_this_transaction[ i ][ "amount" ] );
-                        sum_of_the_values_of_each_input_to_this_transaction = sum_of_the_values_of_each_input_to_this_transaction + utxos_in_this_transaction[ i ][ "amount" ];
-                        console.log( "the sum of the values of each input to this transaction is", sum_of_the_values_of_each_input_to_this_transaction );
+                    console.log( "utxo in this transaction whose value we are currently checking so we can sum up the total value of all utxos in this transaction and check if it is greater than or equal to the total amount we are sending including the mining fee (btw the total amount including the mining fee is " + amount_plus_fee + ")", i );
+                    console.log( "current utxo", utxos_in_this_transaction[ i ] );
+                    console.log( "amount of current utxo", utxos_in_this_transaction[ i ][ "amount" ] );
+                    sum_of_the_values_of_each_input_to_this_transaction = sum_of_the_values_of_each_input_to_this_transaction + utxos_in_this_transaction[ i ][ "amount" ];
+                    console.log( "the sum of the values of each input to this transaction is", sum_of_the_values_of_each_input_to_this_transaction );
                 }
                 if ( sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee < 546 ) {
-                        console.log( "the sum of the values of each input to this transaction, i.e.", sum_of_the_values_of_each_input_to_this_transaction, "minus the amount we need in the inputs, i.e.", amount_plus_fee, ", was less than the dust limit (546), so we need to run this function again with a higher amount_plus_fee value" );
-                        var returnable = await contributeUtxosToCoinjoin( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, this_addition_is_being_done_after_the_total_transaction_size_is_known, total_transaction_size, to_amount );
-                        return returnable;
+                    console.log( "the sum of the values of each input to this transaction, i.e.", sum_of_the_values_of_each_input_to_this_transaction, "minus the amount we need in the inputs, i.e.", amount_plus_fee, ", was less than the dust limit (546), so we need to run this function again with a higher amount_plus_fee value" );
+                    var returnable = await contributeUtxosToCoinjoin( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, this_addition_is_being_done_after_the_total_transaction_size_is_known, total_transaction_size, to_amount );
+                    return returnable;
                 }
                 var change_amount = sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee;
                 var change_address = "";
                 if ( change_amount > 546 ) {
-                	change_address = await getSecondUnusedChangeAddress();
+                    change_address = await getSecondUnusedChangeAddress();
                 } else {
-                	console.log( `the change amount is only ${change_amount} sats so I will overlook it` );
+                    console.log( `the change amount is only ${change_amount} sats so I will overlook it` );
                 }
                 var array = [utxos_in_this_transaction, change_amount, change_address];
                 return array;
-		}
+            }
 
-		function addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, this_addition_is_being_done_because_of_a_change_address = false, this_addition_is_being_done_after_the_total_transaction_size_is_known = false, total_transaction_size = 0, to_amount ) {
-		        if ( !amount_plus_fee || amount_plus_fee == "" ) {
-		                return;
-		        }
-		        var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
-		        var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
-		        var original_amount_plus_fee = amount_plus_fee;
-		        console.log( "amount plus fee:", amount_plus_fee );
-		        console.log( "utxos available for this transaction:", utxos_available_for_this_transaction );
-		        console.log( "utxos in this transaction:", utxos_in_this_transaction );
-		        if ( utxos_available_for_this_transaction.length < 1 ) {
-		                alert( "You do not have enough money to send this transaction. Please top up your wallet or send a smaller amount." );
-		                return;
-		        }
+            function addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, this_addition_is_being_done_because_of_a_change_address = false, this_addition_is_being_done_after_the_total_transaction_size_is_known = false, total_transaction_size = 0, to_amount ) {
+                if ( !amount_plus_fee || amount_plus_fee == "" ) {
+                    return;
+                }
+                var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
+                var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
+                var original_amount_plus_fee = amount_plus_fee;
+                console.log( "amount plus fee:", amount_plus_fee );
+                console.log( "utxos available for this transaction:", utxos_available_for_this_transaction );
+                console.log( "utxos in this transaction:", utxos_in_this_transaction );
+                if ( utxos_available_for_this_transaction.length < 1 ) {
+                    alert( "You do not have enough money to send this transaction. Please top up your wallet or send a smaller amount." );
+                    return;
+                }
                 var largest_utxo_value = 0;
                 var largest_utxo_indexnum = 0;
                 var i; for ( i=0; i<utxos_available_for_this_transaction.length; i++ ) {
-                        if ( utxos_available_for_this_transaction[ i ][ "amount" ] > largest_utxo_value ) {
-                                largest_utxo_value = utxos_available_for_this_transaction[ i ][ "amount" ];
-                                largest_utxo_indexnum = i;
-                        }
+                    if ( utxos_available_for_this_transaction[ i ][ "amount" ] > largest_utxo_value ) {
+                        largest_utxo_value = utxos_available_for_this_transaction[ i ][ "amount" ];
+                        largest_utxo_indexnum = i;
+                    }
                 }
                 console.log( "largest_utxo_indexnum", largest_utxo_indexnum );
                 console.log( "value of largest utxo", utxos_available_for_this_transaction[ largest_utxo_indexnum ][ "amount" ] );
                 utxos_in_this_transaction.push( utxos_available_for_this_transaction.splice( largest_utxo_indexnum, 1 )[ 0 ] );
                 if ( !this_addition_is_being_done_after_the_total_transaction_size_is_known ) {
-                        amount_plus_fee = amount_plus_fee + ( 50 * sats_per_byte );
-                        console.log( "the new amount_plus_fee, accounting for the new inputs, is", amount_plus_fee );
+                    amount_plus_fee = amount_plus_fee + ( 50 * sats_per_byte );
+                    console.log( "the new amount_plus_fee, accounting for the new inputs, is", amount_plus_fee );
                 }
                 console.log( "number of utxos in this transaction", utxos_in_this_transaction.length );
                 var sum_of_the_values_of_each_input_to_this_transaction = 0;
                 var i; for ( i=0; i<utxos_in_this_transaction.length; i++ ) {
-                        console.log( "utxo in this transaction whose value we are currently checking so we can sum up the total value of all utxos in this transaction and check if it is greater than or equal to the total amount we are sending including the mining fee (btw the total amount including the mining fee is " + amount_plus_fee + ")", i );
-                        console.log( "current utxo", utxos_in_this_transaction[ i ] );
-                        console.log( "amount of current utxo", utxos_in_this_transaction[ i ][ "amount" ] );
-                        sum_of_the_values_of_each_input_to_this_transaction = sum_of_the_values_of_each_input_to_this_transaction + utxos_in_this_transaction[ i ][ "amount" ];
-                        console.log( "the sum of the values of each input to this transaction is", sum_of_the_values_of_each_input_to_this_transaction );
+                    console.log( "utxo in this transaction whose value we are currently checking so we can sum up the total value of all utxos in this transaction and check if it is greater than or equal to the total amount we are sending including the mining fee (btw the total amount including the mining fee is " + amount_plus_fee + ")", i );
+                    console.log( "current utxo", utxos_in_this_transaction[ i ] );
+                    console.log( "amount of current utxo", utxos_in_this_transaction[ i ][ "amount" ] );
+                    sum_of_the_values_of_each_input_to_this_transaction = sum_of_the_values_of_each_input_to_this_transaction + utxos_in_this_transaction[ i ][ "amount" ];
+                    console.log( "the sum of the values of each input to this transaction is", sum_of_the_values_of_each_input_to_this_transaction );
                 }
                 if ( sum_of_the_values_of_each_input_to_this_transaction < amount_plus_fee ) {
-                        console.log( "the sum of the values of each input to this transaction, i.e.", sum_of_the_values_of_each_input_to_this_transaction, "was less than the amount we need in the inputs, i.e.", amount_plus_fee, "so we need to run this function again with a higher amount_plus_fee value" );
-                        return addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, this_addition_is_being_done_after_the_total_transaction_size_is_known, total_transaction_size, to_amount );
+                    console.log( "the sum of the values of each input to this transaction, i.e.", sum_of_the_values_of_each_input_to_this_transaction, "was less than the amount we need in the inputs, i.e.", amount_plus_fee, "so we need to run this function again with a higher amount_plus_fee value" );
+                    return addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, this_addition_is_being_done_after_the_total_transaction_size_is_known, total_transaction_size, to_amount );
                 } else {
-                        if ( !this_addition_is_being_done_because_of_a_change_address ) {
-                                if ( total_transaction_size > 0 ) {
-                                        var change_amount = sum_of_the_values_of_each_input_to_this_transaction - ( to_amount + ( total_transaction_size * sats_per_byte ) );
-                                } else {
-                                        var change_amount = sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee;
-                                }
-                                console.log( "the sum of the values of each input to this transaction is", sum_of_the_values_of_each_input_to_this_transaction );
-                                console.log( "amount plus fee", amount_plus_fee );
-                                console.log( "the change amount should be one of two values, either the first number minus the second number, i.e.", sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee, "or the first number minus the to_amount minus the total transaction size -- as long as I know it, currently it is thought to be", total_transaction_size, "and if that number is 0 it just means I do not know it -- multiplied by the sats_per_byte value, which is", sats_per_byte, "for a total of", sum_of_the_values_of_each_input_to_this_transaction - ( to_amount + ( total_transaction_size * sats_per_byte ) ) );
-                                if ( change_amount > 0 ) {
-                                        console.log( "there is change left over, namely", change_amount, "-- so we have to check if that is more than the dust limit" );
-                                } else {
-                                        console.log( "there is no change left over so I do not need a change output, yay!" );
-                                }
-                                if ( change_amount >= 546 ) {
-                                        console.log( "the change amount --", change_amount, "-- is equal to or more than the dust limit of this wallet, which is 546. (It used to be 250 + 50 * sats_per_byte i.e.", ( 250 + 50 * sats_per_byte ), "because I added some to the dust limit so that the change amount would not go lower than the dust limit once I add another output, but this caused problems. Eventually I just set it to 546.) So I have to redo steps 4-9. I used to use a new amount_plus_fee of the previous amount_plus_fee plus 50*sats_per_byte, i.e.", original_amount_plus_fee + 50*sats_per_byte, "because I figured the transaction size would have to rise by about 50 bytes, but it causes problems so now I am redoing it without changing anything. Also I have to remember to use the old values of utxos_available_for_this_transaction and utxos_in_this_transaction" );
-                                        var we_need_a_change_address = true;
-//                                      new_amount_plus_fee = original_amount_plus_fee + ( 50*sats_per_byte );
-                                        new_amount_plus_fee = original_amount_plus_fee;
-                                        console.log( "original utxos available:", JSON.parse( original_utxos_available_for_this_transaction ) );
-                                        console.log( "original utxos in this tx:", JSON.parse( original_utxos_in_this_transaction ) );
-                                        return addUtxosToTx( new_amount_plus_fee, JSON.parse( original_utxos_available_for_this_transaction ), JSON.parse( original_utxos_in_this_transaction ), sats_per_byte, true, this_addition_is_being_done_after_the_total_transaction_size_is_known, total_transaction_size, to_amount );
-                                } else {
-                                        console.log( "there is a small possibility that this was mentioned earlier (if he change output was exactly equal to 0), but in case it was not, be aware that there is no change output because the change amount was lower than my dust threshhold and will therefore be dropped. That is good because it means I am using my coins efficiently and saving on fees" );
-                                        var we_need_a_change_address = false;
-                                }
-                                console.log( "sum of the values of each input to this transaction", sum_of_the_values_of_each_input_to_this_transaction );
-                                console.log( "amount_plus_fee", amount_plus_fee );
-                                console.log( "change_amount", change_amount );
-                                var array = [];
-                                array[ 0 ] = utxos_available_for_this_transaction;
-                                array[ 1 ] = utxos_in_this_transaction;
-                                array[ 2 ] = amount_plus_fee;
-                                array[ 3 ] = change_amount;
-                                array[ 4 ] = "the next field is true if we need a change address";
-                                array[ 5 ] = this_addition_is_being_done_because_of_a_change_address;
-                                return array;
+                    if ( !this_addition_is_being_done_because_of_a_change_address ) {
+                        if ( total_transaction_size > 0 ) {
+                            var change_amount = sum_of_the_values_of_each_input_to_this_transaction - ( to_amount + ( total_transaction_size * sats_per_byte ) );
                         } else {
-                                if ( total_transaction_size > 0 ) {
-                                        var change_amount = sum_of_the_values_of_each_input_to_this_transaction - ( to_amount + ( total_transaction_size * sats_per_byte ) );
-                                } else {
-                                        var change_amount = sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee;
-                                }
-                                console.log( "ok this is part of the change path, my change value is", change_amount );
-                                var array = [];
-                                array[ 0 ] = utxos_available_for_this_transaction;
-                                array[ 1 ] = utxos_in_this_transaction;
-                                array[ 2 ] = amount_plus_fee;
-                                array[ 3 ] = change_amount;
-                                array[ 4 ] = "the next field is true if we need a change address";
-                                array[ 5 ] = this_addition_is_being_done_because_of_a_change_address;
-                                console.log( "I need a change address, right?", array[ 5 ] );
-                                return array;
+                            var change_amount = sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee;
                         }
+                        console.log( "the sum of the values of each input to this transaction is", sum_of_the_values_of_each_input_to_this_transaction );
+                        console.log( "amount plus fee", amount_plus_fee );
+                        console.log( "the change amount should be one of two values, either the first number minus the second number, i.e.", sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee, "or the first number minus the to_amount minus the total transaction size -- as long as I know it, currently it is thought to be", total_transaction_size, "and if that number is 0 it just means I do not know it -- multiplied by the sats_per_byte value, which is", sats_per_byte, "for a total of", sum_of_the_values_of_each_input_to_this_transaction - ( to_amount + ( total_transaction_size * sats_per_byte ) ) );
+                        if ( change_amount > 0 ) {
+                            console.log( "there is change left over, namely", change_amount, "-- so we have to check if that is more than the dust limit" );
+                        } else {
+                            console.log( "there is no change left over so I do not need a change output, yay!" );
+                        }
+                        if ( change_amount >= 546 ) {
+                            console.log( "the change amount --", change_amount, "-- is equal to or more than the dust limit of this wallet, which is 546. (It used to be 250 + 50 * sats_per_byte i.e.", ( 250 + 50 * sats_per_byte ), "because I added some to the dust limit so that the change amount would not go lower than the dust limit once I add another output, but this caused problems. Eventually I just set it to 546.) So I have to redo steps 4-9. I used to use a new amount_plus_fee of the previous amount_plus_fee plus 50*sats_per_byte, i.e.", original_amount_plus_fee + 50*sats_per_byte, "because I figured the transaction size would have to rise by about 50 bytes, but it causes problems so now I am redoing it without changing anything. Also I have to remember to use the old values of utxos_available_for_this_transaction and utxos_in_this_transaction" );
+                            var we_need_a_change_address = true;
+//                                      new_amount_plus_fee = original_amount_plus_fee + ( 50*sats_per_byte );
+                            new_amount_plus_fee = original_amount_plus_fee;
+                            console.log( "original utxos available:", JSON.parse( original_utxos_available_for_this_transaction ) );
+                            console.log( "original utxos in this tx:", JSON.parse( original_utxos_in_this_transaction ) );
+                            return addUtxosToTx( new_amount_plus_fee, JSON.parse( original_utxos_available_for_this_transaction ), JSON.parse( original_utxos_in_this_transaction ), sats_per_byte, true, this_addition_is_being_done_after_the_total_transaction_size_is_known, total_transaction_size, to_amount );
+                        } else {
+                            console.log( "there is a small possibility that this was mentioned earlier (if he change output was exactly equal to 0), but in case it was not, be aware that there is no change output because the change amount was lower than my dust threshhold and will therefore be dropped. That is good because it means I am using my coins efficiently and saving on fees" );
+                            var we_need_a_change_address = false;
+                        }
+                        console.log( "sum of the values of each input to this transaction", sum_of_the_values_of_each_input_to_this_transaction );
+                        console.log( "amount_plus_fee", amount_plus_fee );
+                        console.log( "change_amount", change_amount );
+                        var array = [];
+                        array[ 0 ] = utxos_available_for_this_transaction;
+                        array[ 1 ] = utxos_in_this_transaction;
+                        array[ 2 ] = amount_plus_fee;
+                        array[ 3 ] = change_amount;
+                        array[ 4 ] = "the next field is true if we need a change address";
+                        array[ 5 ] = this_addition_is_being_done_because_of_a_change_address;
+                        return array;
+                    } else {
+                        if ( total_transaction_size > 0 ) {
+                            var change_amount = sum_of_the_values_of_each_input_to_this_transaction - ( to_amount + ( total_transaction_size * sats_per_byte ) );
+                        } else {
+                            var change_amount = sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee;
+                        }
+                        console.log( "ok this is part of the change path, my change value is", change_amount );
+                        var array = [];
+                        array[ 0 ] = utxos_available_for_this_transaction;
+                        array[ 1 ] = utxos_in_this_transaction;
+                        array[ 2 ] = amount_plus_fee;
+                        array[ 3 ] = change_amount;
+                        array[ 4 ] = "the next field is true if we need a change address";
+                        array[ 5 ] = this_addition_is_being_done_because_of_a_change_address;
+                        console.log( "I need a change address, right?", array[ 5 ] );
+                        return array;
+                    }
                 }
-		}
+            }
 
-		async function sendFromUtxoSetToAddress( toamount, toaddress, sats_per_byte, utxos_available_for_this_transaction, utxos_in_this_transaction ) {
-		        console.log( "to amount", toamount );
-		        console.log( "sats per byte", sats_per_byte );
-		        var amount_plus_fee = toamount + ( 150 * sats_per_byte );
-		        console.log( "amount_plus_fee", amount_plus_fee );
-		        if ( !utxos_available_for_this_transaction ) {
-		                var utxos_available_for_this_transaction = JSON.parse( sessionStorage[ "alt_utxo_list" ] );
-		        }
-		        if ( !utxos_in_this_transaction ) {
-		                var utxos_in_this_transaction = [];
-		        }
-		        var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
-		        var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
-		        var array = addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
-		        if ( array[ 0 ] && array[ 0 ].length > 0 && array[ 1 ] && array[ 2 ] && array[ 3 ] && array[ 4 ] && array[ 5 ] ) {
-		                var adjusted_utxos_available_for_this_transaction = array[ 0 ];
-		                var adjusted_utxos_in_this_transaction = array[ 1 ];
-		                amount_plus_fee = array[ 2 ];
-		        } else {
-		                var adjusted_utxos_available_for_this_transaction = [];
-		                var adjusted_utxos_in_this_transaction = [];
-		                amount_plus_fee = 0;
-		        }
-		        var adjusted_utxos_in_this_transaction = array[ 1 ];
-		        amount_plus_fee = array[ 2 ];
-		        if ( array[ 5 ] && array[ 3 ] && Number( array[ 3 ] ) > 546 ) {
-		                var change_amount = array[ 3 ];
-		                console.log( "change_amount", change_amount );
-		                var change_address = await getFirstUnusedChangeAddress();
-		        } else {
-		                var change_amount = 0;
-		                var change_address = "none";
-		        }
-		        console.log( "adjusted_utxos_available_for_this_transaction", adjusted_utxos_available_for_this_transaction );
-		        console.log( "adjusted_utxos_in_this_transaction", adjusted_utxos_in_this_transaction );
-		        console.log( "amount_plus_fee", amount_plus_fee );
-		        var txhex = craftTransaction( adjusted_utxos_in_this_transaction, toamount, toaddress, change_address, change_amount, sats_per_byte );
-		        console.log( txhex );
-		        var tx = bitcoinjs.Transaction.fromHex( txhex );
-		        var virtual_bytes = tx.virtualSize();
-		        var real_fee = virtual_bytes * sats_per_byte;
-		        var new_amount_plus_fee = toamount + real_fee;
-		        console.log( "now I will check what the original utxos available are" );
-		        console.log( original_utxos_available_for_this_transaction );
-		        console.log( JSON.parse( original_utxos_available_for_this_transaction ) );
-		        console.log( "I will also check what the original utxos in the transaction are", JSON.parse( original_utxos_in_this_transaction ) );
-		        console.log( "Ok I am about to rerun addUtxosToTx with the new fee in mind. The most important variable for this is new_amount_plus_fee, which is the amount I am sending,", toamount, "plus a variable where the number of actual bytes in this transaction, i.e.", virtual_bytes, "is multiplied by the sats per byte value, i.e.", sats_per_byte, "to give a result of", real_fee, "which I add to my to_amount to get a total new_amount_plus_fee of", new_amount_plus_fee );
-		        var new_array = addUtxosToTx( new_amount_plus_fee, JSON.parse( original_utxos_available_for_this_transaction ), JSON.parse( original_utxos_in_this_transaction ), sats_per_byte, false, true, virtual_bytes, toamount );
-		        console.log( "I need a change address, right? (This should be at least the second time I am asking this)", new_array[ 5 ] );
-		        var new_adjusted_utxos_available_for_this_transaction = new_array[ 0 ];
-		        var new_adjusted_utxos_in_this_transaction = new_array[ 1 ];
-		        new_amount_plus_fee = new_array[ 2 ];
-		        var new_change_amount = new_array[ 3 ];
-		        if( Number( new_array[ 3 ] ) >= 546 && ( !change_address || change_address == "none" ) && new_array[ 5 ] ) {
-		                var change_address = await getFirstUnusedChangeAddress();
-		        }
-		        var new_txhex = craftTransaction( new_adjusted_utxos_in_this_transaction, toamount, toaddress, change_address, new_change_amount, sats_per_byte );
-		        console.log( new_txhex );
-		        var new_tx = bitcoinjs.Transaction.fromHex( new_txhex );
-		        var new_virtual_bytes = tx.virtualSize();
-		        if ( new_virtual_bytes == virtual_bytes ) {
-		                console.log( "yay! The transaction is ready and here is its hex:", new_txhex );
-		                return new_txhex;
-		        } else {
-		                alert( "I tried to craft your transaction twice and I kept getting errors. Please contact the developer of this wallet for assistance." );
-		        }
-		}
-	</script>
-	<script>
-		function createQR( content ) {
-		        var dataUriPngImage = document.createElement( "img" ),
-		        s = QRCode.generatePNG( content, {
-		                ecclevel: "M",
-		                format: "html",
-		                fillcolor: "#FFFFFF",
-		                textcolor: "#373737",
-		                margin: 4,
-		                modulesize: 8,
-		        });
-		        dataUriPngImage.src = s;
-		        dataUriPngImage.id = "qr_code";
-		        dataUriPngImage.style.display = "block";
-		        dataUriPngImage.style.margin = "auto";
-		        dataUriPngImage.style.maxWidth = "300px";
-		        return dataUriPngImage;
-		}
-	</script>
-	<style>
-		* {
-			box-sizing: border-box;
-			margin: 0px;
-		}
-		html, body {
-			height: 100%;
-			margin: 0px;
-		}
-		#wallet {
-			position: relative;
-			border: 1px solid black;
-			width: 100%;
-			max-width: 500px;
-			min-height: 900px;
-			margin: auto;
-			border-radius: 20px;
-			text-align: center;
-			padding: 10px;
-		}
-		#wallet-home {
-		}
-		#balance-line {
-			display: inline-block;
-			max-height: 25px;
-			height: 25px;
-			margin-bottom: 5px;
-		}
-		#denomination {
-			display: none;
-		}
-		#backup-line {
-			display: none;
-			position: absolute;
-			bottom: 10px;
-			width: 95%;
-			margin: auto;
-			border: 1px solid black;
-		}
-		#backup-instructions {
-			text-decoration: underline;
-			width: 80%;
-			margin: auto;
-			margin-top: 20px;
-			margin-bottom: 20px;
-		}
-		#backup-words {
-			margin-bottom: 20px;
-		}
-		#receive-tab {
-			display: none;
-		}
-		#address-line {
-			margin-bottom: 20px;
-		}
-		#send-tab {
-			display: none;
-		}
-		#address-input-line {
-			max-width: 400px;
-			text-align: left;
-			margin: auto;
-		}
-		#address-input-line input {
-			width: 100%;
-			margin-bottom: 20px;
-		}
-		#send-money-button-line {
-			text-align: center;
-			margin-bottom: 20px;
-		}
-	</style>
-</head>
-<body>
-	<div id="wallet">
-		<div id="home-tab">
-			<div id="balance-label">
-				Balance
-			</div>
-			<div id="balance-line">
-				<span id="balance">
-					<img src="https://i.gifer.com/origin/34/34338d26023e5515f6cc8969aa027bca_w200.gif" style="width: 100%; max-width: 25px; height: 25px;" />
-				</span> <span id="denomination">sats</span>
-			</div>
-			<div>
-				<button class="send-button">Send</button> 
-				<button class="receive-button">Receive</button>
-			</div>
-			<div id="backup-line">
-				<p id="backup-instructions">
-					Write down your backup words or you may lose your money
-				</p>
-				<p style="display: inline-block;margin: 10px;position: absolute;right: 0px;top: 0px;cursor: pointer;" id="hide-backup-line">×</p>
-				<p id="backup-words">
-				</p>
-			</div>
-		</div>
-		<div id="receive-tab">
-			<div id="receive-label">
-				Receive
-			</div>
-			<div id="address-qr">
-				<img src="https://i.gifer.com/origin/34/34338d26023e5515f6cc8969aa027bca_w200.gif" style="width: 100%; max-width: 300px; height: 300px;" />
-			</div>
-			<div id="address-line">
-				<span id="address">
-				</span>
-			</div>
-			<div>
-				<button class="home-button">Home</button> 
-			</div>
-		</div>
-		<div id="send-tab">
-			<div id="send-label">
-				Send
-			</div>
-			<div id="address-input-line">
-				<p>
-					<div id="address-input-label">
-						Address
-					</div>
-					<input type="text" name="send-address-input" id="send-address-input" placeholder="a bitcoin address e.g. tb1ql7w62elx9ucw4pj5lgw4l028hmuw80sndtntxt" />
-				</p>
-				<p>
-					<div id="amount-input-label">
-						Amount
-					</div>
-					<input type="number" step="1" name="send-amount-input" id="send-amount-input" placeholder="an amount in sats e.g. 503505" />
-				</p>
-				<div id="sliderange">
-				  <p>Sats per byte: <span id="sats_per_byte">1</span></p>
-				  <input id="sats_range" type="range" min="1" max="100" value="1">
-				</div>
-				<script>
-						var slider = document.getElementById( "sats_range" );
-						var output = document.getElementById( "sats_per_byte" );
-						output.innerHTML = slider.value;
-						slider.oninput = function() {
-								output.innerHTML = this.value;
-						}
-				</script>
-				<p id="send-money-button-line">
-					<button id="send-money-button" onclick='prepCoinjoin( Number( $( `input[name="send-amount-input"]` ).value ), $( `input[name="send-address-input"]` ).value );'>Send</button>
-				</p>
-			</div>
-			<div>
-				<button class="home-button">Home</button> 
-			</div>
-			<div id="progress" style="display: none;">
-				<h2>Progress bar <span id="goal" style="font-size: .8em; font-weight: normal;"></span></h2>
-		        <div id="progressOutline" style="height: 2em; border: 1px solid grey; border-radius: 25px; overflow: hidden;">
-		        	<div id="progressBar" style="height: 2em; background-color: #61eb34; width: 0%; transition: width 1s;">
-		        	</div>
-		        </div>
-		        <div id="cj_status"></div>
-	    	</div>
-	</div>
-	<script>
-		//start the wallet and check its balance every five seconds
-		if ( !localStorage[ "backup_words" ] ) {
-		        localStorage[ "backup_words" ] = bip39.generateMnemonic();
-		}
-		if ( window.location.href.includes( "backup_words=" ) ) {
-			    var words = decodeURI( window.location.href.substring( window.location.href.indexOf( "backup_words=" ) + 13 ) );
-		        localStorage[ "backup_words" ] = words;
-		}
-		document.getElementById( "backup-words" ).innerText = localStorage[ "backup_words" ];
-		async function startWallet() {
-			var balance = await displayBalance();
-			var firstUnusedAddress = await getFirstUnusedAddress();
-			document.getElementById( "balance" ).innerText = balance;
-			document.getElementById( "address" ).innerText = firstUnusedAddress;
-			document.getElementById( "address-qr" ).innerText = "";
-			document.getElementById( "address-qr" ).append( createQR( "bitcoin:" + firstUnusedAddress ) );
-		}
-		//make the receive button display the receive tab
-		var i; for ( i=0; i<document.getElementsByClassName( "receive-button" ).length; i++ ) {
-			document.getElementsByClassName( "receive-button" )[ i ].addEventListener( "click", function() {
-				document.getElementById( "home-tab" ).style.display = "none";
-				document.getElementById( "receive-tab" ).style.display = "block";
-				document.getElementById( "send-tab" ).style.display = "none";
-			});
-		}
-		//make the home button display the home tab
-		var i; for ( i=0; i<document.getElementsByClassName( "home-button" ).length; i++ ) {
-			document.getElementsByClassName( "home-button" )[ i ].addEventListener( "click", function() {
-				document.getElementById( "home-tab" ).style.display = "block";
-				document.getElementById( "receive-tab" ).style.display = "none";
-				document.getElementById( "send-tab" ).style.display = "none";
-			});
-		}
-		//make the send button display the send tab
-		var i; for ( i=0; i<document.getElementsByClassName( "send-button" ).length; i++ ) {
-			document.getElementsByClassName( "send-button" )[ i ].addEventListener( "click", function() {
-				document.getElementById( "home-tab" ).style.display = "none";
-				document.getElementById( "receive-tab" ).style.display = "none";
-				document.getElementById( "send-tab" ).style.display = "block";
-			});
-		}
-		//make the backup instructions disappear when x'd out
-		if ( !sessionStorage[ "hide-backup-instructions" ] || sessionStorage[ "hide-backup-instructions" ] == "false" ) {
-			document.getElementById( "backup-line" ).style.display = "block";
-		}
-		document.getElementById( "hide-backup-line" ).addEventListener( "click", function() {
-			sessionStorage[ "hide-backup-instructions" ] = true;
-			document.getElementById( "backup-line" ).style.display = "none";
-		});
-		//make the send money button send money
-/*
-		document.getElementById( "send-money-button" ).addEventListener( "click", async function() {
-			var to_address = document.getElementById( "send-address-input" ).value;
-			var amount_to_send = Number( document.getElementById( "send-amount-input" ).value );
-			var sats_per_byte = Number( document.getElementById( "sats_per_byte" ).innerText );
-			var txhex = await sendFromUtxoSetToAddress( amount_to_send, to_address, sats_per_byte );
-			console.log( "txhex:", txhex );
-			pushBTCpmt( txhex );
-		});
-*/
-	</script>
-	<script>
-        async function handleMessage( message ) {
-            var [ type, subId, event ] = JSON.parse( message.data );
-            var { kind, content } = event || {}
-            if (!event) return
-            if ( event===true) return
-            var eventData = JSON.stringify([
-                0,
-                event['pubkey'],
-                event['created_at'],
-                event['kind'],
-                event['tags'],
-                event['content']
-            ]);
-            var msghash = sha256( eventData ).toString( 'hex' );
-            var sig_is_valid = await nobleSecp256k1.schnorr.verify( event.sig, msghash, event.pubkey );
-            if (!sig_is_valid) return
-            if (kind === 20004) {
-                content = decrypt(nostr_privKey, event.pubkey, content)
-                takeNextSteps( content, event.pubkey );
+            async function sendFromUtxoSetToAddress( toamount, toaddress, sats_per_byte, utxos_available_for_this_transaction, utxos_in_this_transaction ) {
+                console.log( "to amount", toamount );
+                console.log( "sats per byte", sats_per_byte );
+                var amount_plus_fee = toamount + ( 150 * sats_per_byte );
+                console.log( "amount_plus_fee", amount_plus_fee );
+                if ( !utxos_available_for_this_transaction ) {
+                    var utxos_available_for_this_transaction = JSON.parse( sessionStorage[ "alt_utxo_list" ] );
+                }
+                if ( !utxos_in_this_transaction ) {
+                    var utxos_in_this_transaction = [];
+                }
+                var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
+                var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
+                var array = addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
+                if ( array[ 0 ] && array[ 0 ].length > 0 && array[ 1 ] && array[ 2 ] && array[ 3 ] && array[ 4 ] && array[ 5 ] ) {
+                    var adjusted_utxos_available_for_this_transaction = array[ 0 ];
+                    var adjusted_utxos_in_this_transaction = array[ 1 ];
+                    amount_plus_fee = array[ 2 ];
+                } else {
+                    var adjusted_utxos_available_for_this_transaction = [];
+                    var adjusted_utxos_in_this_transaction = [];
+                    amount_plus_fee = 0;
+                }
+                var adjusted_utxos_in_this_transaction = array[ 1 ];
+                amount_plus_fee = array[ 2 ];
+                if ( array[ 5 ] && array[ 3 ] && Number( array[ 3 ] ) > 546 ) {
+                    var change_amount = array[ 3 ];
+                    console.log( "change_amount", change_amount );
+                    var change_address = await getFirstUnusedChangeAddress();
+                } else {
+                    var change_amount = 0;
+                    var change_address = "none";
+                }
+                console.log( "adjusted_utxos_available_for_this_transaction", adjusted_utxos_available_for_this_transaction );
+                console.log( "adjusted_utxos_in_this_transaction", adjusted_utxos_in_this_transaction );
+                console.log( "amount_plus_fee", amount_plus_fee );
+                var txhex = craftTransaction( adjusted_utxos_in_this_transaction, toamount, toaddress, change_address, change_amount, sats_per_byte );
+                console.log( txhex );
+                var tx = bitcoinjs.Transaction.fromHex( txhex );
+                var virtual_bytes = tx.virtualSize();
+                var real_fee = virtual_bytes * sats_per_byte;
+                var new_amount_plus_fee = toamount + real_fee;
+                console.log( "now I will check what the original utxos available are" );
+                console.log( original_utxos_available_for_this_transaction );
+                console.log( JSON.parse( original_utxos_available_for_this_transaction ) );
+                console.log( "I will also check what the original utxos in the transaction are", JSON.parse( original_utxos_in_this_transaction ) );
+                console.log( "Ok I am about to rerun addUtxosToTx with the new fee in mind. The most important variable for this is new_amount_plus_fee, which is the amount I am sending,", toamount, "plus a variable where the number of actual bytes in this transaction, i.e.", virtual_bytes, "is multiplied by the sats per byte value, i.e.", sats_per_byte, "to give a result of", real_fee, "which I add to my to_amount to get a total new_amount_plus_fee of", new_amount_plus_fee );
+                var new_array = addUtxosToTx( new_amount_plus_fee, JSON.parse( original_utxos_available_for_this_transaction ), JSON.parse( original_utxos_in_this_transaction ), sats_per_byte, false, true, virtual_bytes, toamount );
+                console.log( "I need a change address, right? (This should be at least the second time I am asking this)", new_array[ 5 ] );
+                var new_adjusted_utxos_available_for_this_transaction = new_array[ 0 ];
+                var new_adjusted_utxos_in_this_transaction = new_array[ 1 ];
+                new_amount_plus_fee = new_array[ 2 ];
+                var new_change_amount = new_array[ 3 ];
+                if( Number( new_array[ 3 ] ) >= 546 && ( !change_address || change_address == "none" ) && new_array[ 5 ] ) {
+                    var change_address = await getFirstUnusedChangeAddress();
+                }
+                var new_txhex = craftTransaction( new_adjusted_utxos_in_this_transaction, toamount, toaddress, change_address, new_change_amount, sats_per_byte );
+                console.log( new_txhex );
+                var new_tx = bitcoinjs.Transaction.fromHex( new_txhex );
+                var new_virtual_bytes = tx.virtualSize();
+                if ( new_virtual_bytes == virtual_bytes ) {
+                    console.log( "yay! The transaction is ready and here is its hex:", new_txhex );
+                    return new_txhex;
+                } else {
+                    alert( "I tried to craft your transaction twice and I kept getting errors. Please contact the developer of this wallet for assistance." );
+                }
             }
-            if (kind === 10063) {
-            	//clean out the pool's old entries
-            	Object.keys( pool ).forEach( function( key ) {
-				    var amountpool = pool[ key ];
-				    amountpool.forEach( function( joiner, index ) {
-				        if ( joiner[ "timestamp" ] < Math.floor( Date.now() / 1000 ) - 300 ) {
-				            amountpool.splice( index, 1 );
-				            pool[ key ] = amountpool;
-				        }
-				    });
-				    if ( pool[ key ].length == 0 ) {
-				    	delete pool[ key ];
-				    }
-				});
-				//add a new entry to the pool
-            	if ( !pool[ content ] ) {
-	            	pool[ content ] = [{"joiner": event.pubkey, "timestamp": event.created_at}];
-	            } else {
-	            	pool[ content ].push( {"joiner": event.pubkey, "timestamp": event.created_at} );
-	            }
-                console.log( Math.floor( Date.now() / 1000 ), pool );
+            function createQR( content ) {
+                var dataUriPngImage = document.createElement( "img" ),
+                s = QRCode.generatePNG( content, {
+                    ecclevel: "M",
+                    format: "html",
+                    fillcolor: "#FFFFFF",
+                    textcolor: "#373737",
+                    margin: 4,
+                    modulesize: 8,
+                });
+                dataUriPngImage.src = s;
+                dataUriPngImage.id = "qr_code";
+                dataUriPngImage.style.display = "block";
+                dataUriPngImage.style.margin = "auto";
+                dataUriPngImage.style.maxWidth = "300px";
+                return dataUriPngImage;
             }
-        }
-    </script>
-    <script>
-        async function openConnection( e ) {
-            console.log( "connected to " + relay );
-            var subscription = [ "REQ", subId, filter, { "kinds": [ 10063 ], "since": Math.floor( Date.now() / 1000 ) - 300 } ];
-            socket.send( JSON.stringify( subscription ) );
-        }
-    </script>
-    <script>
-        function checkHeartbeat() {
-            heartbeat = false;
-            var heartbeatsubId   = "00000002" + bitcoinjs.ECPair.makeRandom().privateKey.toString( "hex" ).substring( 8 )
-            var heartbeatfilter  = { "ids": [ "41ce9bc50da77dda5542f020370ecc2b056d8f2be93c1cedf1bf57efcab095b0" ] }
-            var heartbeatsub     = [ "REQ", heartbeatsubId, heartbeatfilter ];
-            if ( socket && socket.readyState != 0 ) {
-                socket.send( JSON.stringify( heartbeatsub ) );
+            function backupWordsAreValid( words ) {
+                try {
+                    if ( typeof( bip39.mnemonicToEntropy( words ) ) == "string" ) {
+                        return true;
+                    }
+                    return;
+                } catch( e ) {
+                    return;
+                }
+                return;
             }
-            setTimeout( function() {
-                var closer = [ "CLOSE", heartbeatsubId ];
+            async function changeDenomination( sats ) {
+                sats = Number( sats );
+                var bucks = await satsToDollars( sats );
+                bucks = ( Math.round( bucks * 100 ) / 100 ).toFixed( 2 );
+                if ( $( '.balance-changer' ).classList.contains( "sats" ) ) {
+                    $( '.balance-changer' ).innerHTML = `<span>${bucks}</span><br>dollars`;
+                    $( '.balance-changer' ).classList.remove( "sats" );
+                    setTimeout( function() {
+                        $( '.balance-changer' ).innerHTML = `<span class="balance">${sats}</span><br>sats`;
+                        $( '.balance-changer' ).classList.add( "sats" );
+                    }, 2000 );
+                }
+            }
+            function getData( url ) {
+                return new Promise( function( resolve, reject ) {
+                    var xhttp = new XMLHttpRequest();
+                    xhttp.onreadystatechange = function() {
+                        if ( this.readyState == 4 && ( this.status >= 200 && this.status < 300 ) ) {
+                            resolve( xhttp.responseText );
+                        };
+                    }
+                    xhttp.open( "GET", url, true );
+                    xhttp.send();
+                });
+            }
+            async function getBitcoinPrice() {
+                var data = await getData( "https://api.coinbase.com/v2/prices/BTC-USD/spot" );
+                var json = JSON.parse( data );
+                var price = json[ "data" ][ "amount" ];
+                return price;
+            }
+            function satsToBitcoin( sats ) {
+                return "0." + String( sats ).padStart( 8, "0" );
+            }
+            async function satsToDollars( sats ) {
+                var bitcoin_price = Number( sessionStorage[ "bitcoin_price" ] );
+                var value_in_dollars = satsToBitcoin( sats ) * bitcoin_price;
+                return value_in_dollars;
+            }
+            async function sendDM( message, recipient ) {
+                var encrypted_message = encrypt( nostr_privKey, recipient, message )
+                var encrypted_event = {
+                    "content"    : encrypted_message,
+                    "created_at" : Math.floor( Date.now() / 1000 ),
+                    "kind"       : 20004,
+                    "tags"       : [ [ 'p', recipient ] ],
+                    "pubkey"     : nostr_pubKey,
+                }
+                var signedEncryptedEvent = await getSignedEvent( encrypted_event, nostr_privKey );
+                socket.send( JSON.stringify( [ "EVENT", signedEncryptedEvent ] ) );
+            }
+
+            async function swimInPool() {
+                var balance = Number( $( '.balance' ).innerText );
+                if ( balance < 1 ) return;
+                var message = String( balance - 546 );
+                var event = {
+                    "content"    : message,
+                    "created_at" : Math.floor( Date.now() / 1000 ),
+                    "kind"       : 10063,
+                    "tags"       : [],
+                    "pubkey"     : nostr_pubKey,
+                }
+                var signedEvent = await getSignedEvent( event, nostr_privKey );
+                console.log( "pool event:", signedEvent );
+                socket.send( JSON.stringify( [ "EVENT", signedEvent ] ) );
+            }
+
+            async function getSignedEvent(event, privateKey) {
+                var eventData = JSON.stringify([
+                    0,                    // Reserved for future use
+                    event['pubkey'],        // The sender's public key
+                    event['created_at'],    // Unix timestamp
+                    event['kind'],        // Message “kind” or type
+                    event['tags'],        // Tags identify replies/recipients
+                    event['content']        // Your note contents
+                ])
+                event.id  = sha256( eventData ).toString( 'hex' )
+                event.sig = await schnorr.sign( event.id, privateKey ) 
+                return event
+            }
+            function hexToBytes( hex ) {
+                return Uint8Array.from( hex.match( /.{1,2}/g ).map( ( byte ) => parseInt( byte, 16 ) ) );
+            }
+
+            function bytesToHex( bytes ) {
+                return bytes.reduce( ( str, byte ) => str + byte.toString( 16 ).padStart( 2, '0' ), '' );
+            }
+            function base64ToHex( str ) {
+                var raw = atob( str );
+                var result = '';
+                var i; for ( i=0; i<raw.length; i++ ) {
+                    var hex = raw.charCodeAt( i ).toString( 16 );
+                    result += ( hex.length === 2 ? hex : '0' + hex );
+                }
+                return result;
+            }
+            function encrypt( privkey, pubkey, text ) {
+                var key = nobleSecp256k1.getSharedSecret( privkey, '02' + pubkey, true ).substring( 2 );
+                var iv = window.crypto.getRandomValues(new Uint8Array(16));
+                var cipher = browserifyCipher.createCipheriv( 'aes-256-cbc', hexToBytes( key ), iv );
+                var encryptedMessage = cipher.update(text,"utf8","base64");
+                emsg = encryptedMessage + cipher.final( "base64" );
+                var uint8View = new Uint8Array( iv.buffer );
+                var decoder = new TextDecoder();
+                return emsg + "?iv=" + btoa( String.fromCharCode.apply( null, uint8View ) );
+            }
+            function decrypt( privkey, pubkey, ciphertext ) {
+                var [ emsg, iv ] = ciphertext.split( "?iv=" );
+                var key = nobleSecp256k1.getSharedSecret( privkey, '02' + pubkey, true ).substring( 2 );
+                var decipher = browserifyCipher.createDecipheriv(
+                    'aes-256-cbc',
+                    hexToBytes( key ),
+                    hexToBytes( base64ToHex( iv ) )
+                );
+                var decryptedMessage = decipher.update( emsg, "base64" );
+                dmsg = decryptedMessage + decipher.final( "utf8" );
+                return dmsg;
+            }
+            async function takeNextSteps( message, sender_pubkey ) {
+                var message = JSON.parse( message );
+                if ( message[ "msg_type" ] == "chat" ) {
+                    console.log( "message from " + sender_pubkey + ": " + message[ "content" ] );
+                    /*
+                    usage:
+                    var message = {}
+                    message[ "msg_type" ] = "chat";
+                    message[ "content" ] = "test123";
+                    message = JSON.stringify( message );
+                    var recipient = <pubkey>;
+                    sendDM( message, recipient );
+                    */
+                }
+                if ( message[ "msg_type" ] == "start_coinjoin" ) {
+                    //todo: make sure the message content is valid json and has the properties I expect
+                    console.log( "message from " + sender_pubkey + ": " + message[ "content" ] );
+                    //contribute one or more inputs and send their info to the coinjoin starter
+                    var sats_per_byte = Number( JSON.parse( message[ "content" ] )[ "sats_per_byte" ] );
+                    var utxos_available_for_this_transaction = JSON.parse( sessionStorage[ "alt_utxo_list" ] );
+                    var utxos_in_this_transaction = [];
+                    var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
+                    var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
+                    var toamount = JSON.parse( message[ "content" ] )[ "amount" ];
+                    var array = await contributeUtxosToCoinjoin( toamount, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
+                    var adjusted_utxos_in_this_transaction = array[ 0 ];
+                    console.log( "utxos I will contribute:", adjusted_utxos_in_this_transaction );
+                    var toaddress = await getFirstUnusedChangeAddress();
+                    var participant = {}
+                    participant[ "destination_address" ] = toaddress;
+                    var utxos = [];
+                    adjusted_utxos_in_this_transaction.forEach( function( utxo ) {
+                        var pub_utxo = {}
+                        pub_utxo[ "tx_id" ] = utxo[ "tx_id" ];
+                        pub_utxo[ "output_number" ] = utxo[ "output_number" ];
+                        pub_utxo[ "amount" ] = utxo[ "amount" ];
+                        pub_utxo[ "pubkey" ] = utxo[ "pubkey" ];
+                        utxos.push( pub_utxo );
+                    });
+                    participant[ "utxos" ] = utxos;
+                    if ( array[ 2 ] && array[ 1 ] > 546 ) {
+                        participant[ "change_amount" ] = array[ 1 ];
+                        participant[ "change_address" ] = array[ 2 ];
+                    }
+                    console.log( participant );
+                    var message = {}
+                    message[ "msg_type" ] = "fill_roster";
+                    message[ "content" ] = JSON.stringify( participant );
+                    message = JSON.stringify( message );
+                    var recipient = sender_pubkey;
+                    sendDM( message, recipient );
+                }
+                if ( message[ "msg_type" ] == "fill_roster" ) {
+                    var it_was_a_duplicate = false;
+                    //todo: make sure the message content is valid json and has the properties I expect
+                    if ( !sessionStorage[ "info_about_the_participants" ] ) {
+                        var info_about_the_participants = [];
+                    } else {
+                        var info_about_the_participants = JSON.parse( sessionStorage[ "info_about_the_participants" ] );
+                        console.log( "info_about_the_participants:", info_about_the_participants );
+                        var known_utxos = [];
+                        info_about_the_participants.forEach( function( participant ) {
+                            participant[ "utxos" ].forEach( function( utxo ) {
+                                known_utxos.push( utxo[ "tx_id" ] + ":" + utxo[ "output_number" ] );
+                            });
+                        });
+                        console.log( "known_utxos:", known_utxos );
+                        //todo: check if the message is a json and has a key called utxos with the expected values, don't assume that
+                        JSON.parse( message[ "content" ] )[ "utxos" ].forEach( function( utxo ) {
+                            if ( known_utxos.includes( utxo[ "tx_id" ] + ":" + utxo[ "output_number" ] ) ) {
+                                it_was_a_duplicate = true;
+                                console.log( "it was a duplicate" );
+                                return;
+                            }
+                        });
+                    }
+                    //check if the roster is full; if it isn't, wait for more info; if it is, check if the qr code is displayed; if it is, wait for more info; if it is not, display it
+                    if ( !it_was_a_duplicate ) {
+                        info_about_the_participants.push( JSON.parse( message[ "content" ] ) );
+                        sessionStorage[ "info_about_the_participants" ] = JSON.stringify( info_about_the_participants );
+                        console.log( `${sender_pubkey} joined your coinjoin!` );
+                        //coinjoiner located...
+                        document.getElementById( "cj_status" ).innerText = "coinjoiner located...";
+                        document.getElementById( "progressBar" ).style.width = document.getElementById( "progressBar" ).style.width = Math.floor( document.getElementById( "progressBar" ).offsetWidth / document.getElementById( "progressBar" ).parentElement.offsetWidth * 100 ) + 3 + "%";
+                    }
+                    console.log( message[ "content" ] );
+                }
+                if ( message[ "msg_type" ] == "sign_coinjoin" ) {
+                    console.log( "message from " + sender_pubkey + ": " + message[ "content" ] );
+                    var it_was_a_duplicate = false;
+                    var psbt = bitcoinjs.Psbt.fromHex( message[ "content" ], {network: bitcoinjs.networks.testnet} );
+                    var amount_i_put_in = amountIPutIn( psbt );
+                    var amount_i_get_out = await amountIGetOut( psbt );
+                    if ( isNaN( amount_i_get_out ) || isNaN( amount_i_put_in ) || amount_i_get_out < amount_i_put_in ) return;
+                    var cosigned_coinjoin = cosignCoinjoin( psbt );
+                    var message = {}
+                    message[ "msg_type" ] = "coinjoin_is_cosigned";
+                    message[ "content" ] = cosigned_coinjoin;
+                    message = JSON.stringify( message );
+                    var recipient = sender_pubkey;
+                    sendDM( message, recipient );
+                }
+                if ( message[ "msg_type" ] == "coinjoin_is_cosigned" ) {
+                    if ( !sessionStorage[ "sigs_info" ] ) {
+                        var sigs_info = [];
+                    } else {
+                        var sigs_info = JSON.parse( sessionStorage[ "sigs_info" ] );
+                        console.log( "sigs_info:", sigs_info );
+                        var known_sigs = [];
+                        sigs_info.forEach( function( psbthex ) {
+                            psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
+                            psbt.data.inputs.forEach( function( input ) {
+                                if ( !input[ "partialSig" ] ) return;
+                                known_sigs.push( JSON.stringify( input[ "partialSig" ] ) );
+                            });
+                        });
+                        console.log( "known_sigs:", known_sigs );
+                        //todo: check if the psbt is valid, don't assume so
+                        var psbt = bitcoinjs.Psbt.fromHex( message[ "content" ], {network: bitcoinjs.networks.testnet} );
+                        psbt.data.inputs.forEach( function( input ) {
+                            var it_was_a_duplicate = false;
+                            if ( !input[ "partialSig" ] ) {
+                                it_was_a_duplicate = true;
+                                console.log( "it wasn't technically a duplicate but close enough -- it had no signature" );
+                                return;
+                            }
+                            if ( known_sigs.includes( JSON.stringify( input[ "partialSig" ] ) ) ) {
+                                it_was_a_duplicate = true;
+                                console.log( "it was a duplicate" );
+                                return;
+                            }
+                            //todo: only add the psbthex to the sigs_info if all of the inputs by that user are signed...this will require tracking how many inputs that user needs to sign
+                            if ( !it_was_a_duplicate ) {
+                                var psbthex = message[ "content" ];
+                                if ( !sigs_info.includes( psbthex ) ) {
+                                    sigs_info.push( psbthex );
+                                    sessionStorage[ "sigs_info" ] = JSON.stringify( sigs_info );
+                                }
+                                console.log( `${sender_pubkey} cosigned at least once (it is okay if the message appears two times and it is also okay if it only appears one time)!` );
+                                //signature added...
+                                document.getElementById( "cj_status" ).innerText = "signature added...";
+                                document.getElementById( "progressBar" ).style.width = document.getElementById( "progressBar" ).style.width = Math.floor( document.getElementById( "progressBar" ).offsetWidth / document.getElementById( "progressBar" ).parentElement.offsetWidth * 100 ) + 3 + "%";
+                            }
+                        });
+                    }
+                }
+            }
+            function rosterIsFull() {
+                if ( !sessionStorage[ "num_of_participants" ] ) {
+                    return false;
+                }
+                if ( !sessionStorage[ "info_about_the_participants" ] ) {
+                    var info_about_the_participants = [];
+                    sessionStorage[ "info_about_the_participants" ] = JSON.stringify( info_about_the_participants );
+                } else {
+                    var info_about_the_participants = JSON.parse( sessionStorage[ "info_about_the_participants" ] );
+                }
+                if ( info_about_the_participants.length == Number( sessionStorage[ "num_of_participants" ] - 1 ) ) {
+                    return true;
+                }
+            }
+            function allSignaturesArrived() {
+                if ( !sessionStorage[ "num_of_participants" ] ) {
+                    return false;
+                }
+                if ( !sessionStorage[ "sigs_info" ] ) {
+                    var sigs_info = [];
+                    sessionStorage[ "sigs_info" ] = JSON.stringify( sigs_info );
+                } else {
+                    var sigs_info = JSON.parse( sessionStorage[ "sigs_info" ] );
+                }
+                if ( sigs_info.length == Number( sessionStorage[ "num_of_participants" ] ) ) {
+                    return true;
+                }
+            }
+            async function isRosterFullYet() {
+                var roster_is_full = await rosterIsFull();
+                return new Promise( function( resolve, reject ) {
+                    if ( !roster_is_full ) {
+                        setTimeout( async function() {
+                            var msg = await isRosterFullYet();
+                            resolve( msg );
+                        }, 5000 );
+                    } else {
+                        resolve( roster_is_full );
+                    }
+                });
+            }
+            async function didAllSignaturesArriveYet() {
+                var all_sigs_here = await allSignaturesArrived();
+                return new Promise( function( resolve, reject ) {
+                    if ( !all_sigs_here ) {
+                        setTimeout( async function() {
+                            var msg = await didAllSignaturesArriveYet();
+                            resolve( msg );
+                        }, 5000 );
+                    } else {
+                        resolve( all_sigs_here );
+                    }
+                });
+            }
+            function isValidAddress( address ) {
+                try{
+                    return ( typeof( bitcoinjs.address.toOutputScript( address, bitcoinjs.networks.testnet ) ) == "object" );
+                } catch( e ) {
+                    return false;
+                }
+            }
+            async function prepCoinjoin( toamount, toaddress ) {
+                if ( !isValidAddress( toaddress ) ) {
+                    alert( "You entered an invalid address" );
+                    return;
+                }
+                document.getElementById( "progress" ).style.display = "block";
+                var other_participants = [];
+                Object.keys( pool ).forEach( function( amount ) {
+                    if ( toamount <= amount && other_participants.length < 10 ) {
+                        pool[ amount ].forEach( function( joiner ) {
+                            if ( other_participants.length < 10 ) {
+                                other_participants.push( joiner[ "joiner" ] )
+                            }
+                        });
+                    }
+                });
+                console.log( "other_participants:", other_participants );
+                //reaching out to other_participants.length other people...
+                document.getElementById( "cj_status" ).innerText = `reaching out to ${other_participants.length} other people...`;
+                document.getElementById( "progressBar" ).style.width = "10%";
+                var sats_per_byte = Number( document.getElementById( "sats_per_byte" ).innerText );
+                sessionStorage[ "num_of_participants" ] = other_participants.length + 1;
+                var participant = {}
+                participant[ "amount" ] = toamount;
+                participant[ "num_of_participants" ] = other_participants.length + 1;
+                participant[ "destination_address" ] = toaddress;
+                participant[ "sats_per_byte" ] = sats_per_byte;
+                console.log( "participant:", participant );
+                var info_about_the_participants = [];
+                info_about_the_participants.push( participant );
+                var message = {}
+                message[ "msg_type" ] = "start_coinjoin";
+                message[ "content" ] = JSON.stringify( participant );
+                message = JSON.stringify( message );
+                var i; for ( i=0; i<other_participants.length; i++ ) {
+                    console.log( "sending a message to:", other_participants[ i ] );
+                    sendDM( message, other_participants[ i ] );
+                    var timeout = await waitSomeSeconds( 2 );
+                }
+                var roster_is_full = await isRosterFullYet();
+                //all coinjoiners located...
+                document.getElementById( "cj_status" ).innerText = `enough coinjoiners located...`;
+                document.getElementById( "progressBar" ).style.width = "50%";
+                console.log( "roster is full, right?", roster_is_full );
+                var participants = JSON.parse( sessionStorage[ "info_about_the_participants" ] );
+                var coinjoin_inputs = [];
+                var coinjoin_outputs = [];
+                participants.forEach( function( participant ) {
+                    participant[ "utxos" ].forEach( function( utxo ) {
+                        coinjoin_inputs.push( utxo );
+                    });
+                });
+                participants.forEach( function( participant ) {
+                    if ( participant[ "change_amount" ] && Number( participant[ "change_amount" ] ) > 546 ) {
+                        var sum_of_this_participants_utxos = 0;
+                        participant[ "utxos" ].forEach( function( utxo ) {
+                            sum_of_this_participants_utxos = sum_of_this_participants_utxos + utxo[ "amount" ];
+                        });
+                        var real_change = sum_of_this_participants_utxos - toamount;
+                        if ( real_change != Number( participant[ "change_amount" ] ) ) {
+                            alert( `Scammer! True change due: ${real_change} Desired change due: ${Number( participant[ "change_amount" ] )}` );
+                            return;
+                        }
+                    }
+                    coinjoin_outputs.push( [ participant[ "destination_address" ], toamount ] );
+                    if ( participant[ "change_address" ] && Number( participant[ "change_amount" ] ) ) {
+                        coinjoin_outputs.push( [ participant[ "change_address" ], real_change ] );
+                    }
+                });
+                console.log( coinjoin_inputs );
+                console.log( coinjoin_outputs );
+                var utxos_available_for_this_transaction = JSON.parse( sessionStorage[ "alt_utxo_list" ] );
+                var utxos_in_this_transaction = [];
+                var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
+                var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
+                var amount_plus_fee = toamount + ( ( 125 * coinjoin_inputs.length + 1 ) + ( 50 * coinjoin_outputs.length + 1 ) ) * sats_per_byte;
+                //creating coinjoin transaction...
+                document.getElementById( "cj_status" ).innerText = `creating coinjoin transaction...`;
+                document.getElementById( "progressBar" ).style.width = "60%";
+                var array = addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
+                if ( !array ) return;
+                if ( array[ 0 ] && array[ 0 ].length > 0 && array[ 1 ] && array[ 2 ] && array[ 3 ] && array[ 4 ] && array[ 5 ] ) {
+                        var adjusted_utxos_available_for_this_transaction = array[ 0 ];
+                        var adjusted_utxos_in_this_transaction = array[ 1 ];
+                        amount_plus_fee = array[ 2 ];
+                } else {
+                        var adjusted_utxos_available_for_this_transaction = [];
+                        var adjusted_utxos_in_this_transaction = [];
+                        amount_plus_fee = 0;
+                }
+                var adjusted_utxos_in_this_transaction = array[ 1 ];
+                amount_plus_fee = array[ 2 ];
+                if ( array[ 5 ] && array[ 3 ] && Number( array[ 3 ] ) > 546 ) {
+                        var change_amount = array[ 3 ];
+                        console.log( "change_amount", change_amount );
+                        var change_address = await getFirstUnusedChangeAddress();
+                        coinjoin_outputs.push( [ change_address, change_amount ] );
+                } else {
+                        var change_amount = 0;
+                        var change_address = "none";
+                }
+                coinjoin_outputs.push( [ toaddress, toamount ] );
+                console.log( "adjusted_utxos_available_for_this_transaction", adjusted_utxos_available_for_this_transaction );
+                console.log( "adjusted_utxos_in_this_transaction", adjusted_utxos_in_this_transaction );
+                console.log( "amount_plus_fee", amount_plus_fee );
+                adjusted_utxos_in_this_transaction.forEach( function( utxo ) {
+                    var pub_utxo = {}
+                    pub_utxo[ "tx_id" ] = utxo[ "tx_id" ];
+                    pub_utxo[ "output_number" ] = utxo[ "output_number" ];
+                    pub_utxo[ "amount" ] = utxo[ "amount" ];
+                    pub_utxo[ "pubkey" ] = utxo[ "pubkey" ];
+                    pub_utxo[ "privkey" ] = utxo[ "privkey" ];
+                    coinjoin_inputs.push( pub_utxo );
+                });
+                console.log( "inputs:", coinjoin_inputs );
+                console.log( "outputs:", coinjoin_outputs );
+                var cj_psbt = startCoinjoin( toamount, coinjoin_inputs, coinjoin_outputs );
+                var signed_cj = signCoinjoin( toamount, coinjoin_inputs, coinjoin_outputs );
+                sessionStorage[ "sigs_info" ] = JSON.stringify( [signed_cj] );
+                console.log( "here is the coinjoin psbt:", cj_psbt );
+                //asking everyone to sign...
+                document.getElementById( "cj_status" ).innerText = `asking everyone to sign...`;
+                document.getElementById( "progressBar" ).style.width = "75%";
+                //todo: reestimate the transaction fee before sending the transaction out for signatures. I probably can't predict an exact fee since I don't know the sig lengths yet but if I do the estimate with an assumed max sig size of 74 bytes then I will be erring on the side of caution (but note that if there are 100 people and their sigs are on average 2 bytes shorter than my estimate then I am overpaying by 200 bytes multiplied by however many sats per byte I choose...which can result in quite a large surcharge, such as 6000 sats if I pay 30 sats per byte).
+                var message = {}
+                message[ "msg_type" ] = "sign_coinjoin";
+                message[ "content" ] = cj_psbt;
+                message = JSON.stringify( message );
+                var i; for ( i=0; i<other_participants.length; i++ ) {
+                    sendDM( message, other_participants[ i ] );
+                }
+                var sigs_are_here = await didAllSignaturesArriveYet();
+                //everyone signed...
+                document.getElementById( "cj_status" ).innerText = `everyone signed...`;
+                document.getElementById( "progressBar" ).style.width = "95%";
+                var timeout = await waitSomeSeconds( 2 );
+                console.log( "the sigs are all here, right?", sigs_are_here );
+                var signed_psbts = JSON.parse( sessionStorage[ "sigs_info" ] );
+                var final_psbt = bitcoinjs.Psbt.fromHex( cj_psbt, {network: bitcoinjs.networks.testnet} );
+                signed_psbts.forEach( function( psbthex ) {
+                    var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
+                    psbt.data.inputs.forEach( function( input, index ) {
+                        if ( !input[ "partialSig" ] ) return;
+                        final_psbt.data.inputs[ index ][ "partialSig" ] = input[ "partialSig" ];
+                    });
+                });
+                final_psbt.finalizeAllInputs();
+                final_psbt_hex = final_psbt.toHex();
+                console.log( "final_psbt:", final_psbt_hex );
+                console.log( "final_txhex:", final_psbt.extractTransaction().toHex() );
+                sessionStorage.removeItem( "num_of_participants" );
+                sessionStorage.removeItem( "info_about_the_participants" );
+                sessionStorage.removeItem( "sigs_info" );
+                var tx = bitcoinjs.Transaction.fromHex( final_psbt.extractTransaction().toHex() );
+                console.log( `the transaction is this size (in bytes): ${tx.virtualSize()}`);
+                console.log( `the transaction fee is: ${final_psbt.getFee()} sats`);
+                var sat_or_sats = ( final_psbt.getFeeRate() == 1 ) ? "sat":"sats";
+                var conf = confirm( `This transaction will send ${toamount} sats to ${toaddress} through a coinjoin with ${other_participants.length + 1} people. The mining fee will cost ${final_psbt.getFee()} sats, which gives you a fee rate close to ${final_psbt.getFeeRate()} ${ sat_or_sats} per byte. (Note that it is hard to get a coinjoin's feerate to precisely match what you want. This should be close.) If you are okay with that, please click okay, otherwise you can cancel the payment.` );
+                if ( !conf ) {
+                    document.getElementById( "progress" ).style.display = "none";
+                    document.getElementById( "progressBar" ).style.width = "0%";
+                    return;
+                }
+                document.getElementById( "progress" ).style.display = "none";
+                document.getElementById( "progressBar" ).style.width = "0%";
+                var txid = await pushBTCpmt( final_psbt.extractTransaction().toHex() );
+                console.log( "Your transaction was broadcasted, your txid is: " + txid );
+            }
+            function waitSomeSeconds( num ) {
+                var num = num.toString() + "000";
+                num = Number( num );
+                return new Promise( function( resolve, reject ) {
+                    setTimeout( function() { resolve( "" ); }, num );
+                });
+            }
+            async function handleMessage( message ) {
+                var [ type, subId, event ] = JSON.parse( message.data );
+                var { kind, content } = event || {}
+                if (!event) return
+                if ( event===true) return
+                var eventData = JSON.stringify([
+                    0,
+                    event['pubkey'],
+                    event['created_at'],
+                    event['kind'],
+                    event['tags'],
+                    event['content']
+                ]);
+                var msghash = sha256( eventData ).toString( 'hex' );
+                var sig_is_valid = await nobleSecp256k1.schnorr.verify( event.sig, msghash, event.pubkey );
+                if (!sig_is_valid) return
+                if (kind === 20004) {
+                    content = decrypt(nostr_privKey, event.pubkey, content)
+                    takeNextSteps( content, event.pubkey );
+                }
+                if (kind === 10063) {
+                    //clean out the pool's old entries
+                    Object.keys( pool ).forEach( function( key ) {
+                        var amountpool = pool[ key ];
+                        amountpool.forEach( function( joiner, index ) {
+                            if ( joiner[ "timestamp" ] < Math.floor( Date.now() / 1000 ) - 300 ) {
+                                amountpool.splice( index, 1 );
+                                pool[ key ] = amountpool;
+                            }
+                        });
+                        if ( pool[ key ].length == 0 ) {
+                            delete pool[ key ];
+                        }
+                    });
+                    //add a new entry to the pool
+                    if ( !pool[ content ] ) {
+                        pool[ content ] = [{"joiner": event.pubkey, "timestamp": event.created_at}];
+                    } else {
+                        pool[ content ].push( {"joiner": event.pubkey, "timestamp": event.created_at} );
+                    }
+                    console.log( Math.floor( Date.now() / 1000 ), pool );
+                }
+            }
+            async function openConnection( e ) {
+                console.log( "connected to " + relay );
+                var subscription = [ "REQ", subId, filter, { "kinds": [ 10063 ], "since": Math.floor( Date.now() / 1000 ) - 300 } ];
+                socket.send( JSON.stringify( subscription ) );
+            }
+            function checkHeartbeat() {
+                heartbeat = false;
+                var heartbeatsubId   = "00000002" + bitcoinjs.ECPair.makeRandom().privateKey.toString( "hex" ).substring( 8 )
+                var heartbeatfilter  = { "ids": [ "41ce9bc50da77dda5542f020370ecc2b056d8f2be93c1cedf1bf57efcab095b0" ] }
+                var heartbeatsub     = [ "REQ", heartbeatsubId, heartbeatfilter ];
                 if ( socket && socket.readyState != 0 ) {
-                    socket.send( JSON.stringify( closer ) );
+                    socket.send( JSON.stringify( heartbeatsub ) );
                 }
-            }, 1500 );
-            setTimeout( function() {
-                if ( !heartbeat && socket.readyState == 3 ) {
-                    socket.removeEventListener( 'open', openConnection );
-                    socket.removeEventListener( 'message', handleMessage );
-                    socket = new WebSocket( relay );
-                    socket.addEventListener( 'open', openConnection );
-                    socket.addEventListener( 'message', handleMessage );
+                setTimeout( function() {
+                    var closer = [ "CLOSE", heartbeatsubId ];
+                    if ( socket && socket.readyState != 0 ) {
+                        socket.send( JSON.stringify( closer ) );
+                    }
+                }, 1500 );
+                setTimeout( function() {
+                    if ( !heartbeat && socket.readyState == 3 ) {
+                        socket.removeEventListener( 'open', openConnection );
+                        socket.removeEventListener( 'message', handleMessage );
+                        socket = new WebSocket( relay );
+                        socket.addEventListener( 'open', openConnection );
+                        socket.addEventListener( 'message', handleMessage );
+                    }
+                }, 2000 );
+            }
+            function getParameterByName( name, string ) {
+                name = name.replace(/[\[\]]/g, '\\$&');
+                var regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
+                    results = regex.exec(string);
+                if (!results) return null;
+                if (!results[2]) return '';
+                return decodeURIComponent(results[2].replace(/\+/g, ' '));
+            }
+            function parseURI( uri ) {
+                if ( uri.includes( "//" ) ) {
+                    uri = uri.substring( uri.indexOf( "//" ) + 2 );
                 }
-            }, 2000 );
-        }
-    </script>
+                if ( !uri.includes( ":" ) ) return uri;
+                uri = uri.substring( uri.indexOf( ":" ) + 1 );
+                var amount = getParameterByName( "amount", uri );
+                if ( amount ) {
+                    amount = amount * 100000000;
+                }
+                if ( uri.includes( "?" ) ) {
+                    uri = uri.substring( 0, uri.indexOf( "?" ) );
+                }
+                var array = [];
+                array.push( uri );
+                if ( amount ) {
+                    array.push( amount );
+                }
+                return array;
+            }
+        </script>
+        <style>
+            * {
+                box-sizing: border-box;
+                font-size: 1.15rem;
+                font-family: Arial, sans-serif;
+                color: white;
+            }
+            html {
+                height: 100%;
+                min-height: 100%;
+                padding: 0px;
+                max-width: 70ch;
+                margin: auto;
+                line-height: 1.25;
+                background-color: black;
+            }
+            body {
+                padding: 3rem 1rem;
+                margin: 0px;
+                height: 100%;
+                min-height: 100%;
+            }
+            h1 {
+                font-size: 2rem;
+            }
+            h2 {
+                font-size: 1.5rem;
+            }
+            textarea, input {
+                color: black;
+            }
+            .banner {
+                display: none;
+                width: 100%;
+                position: absolute;
+                top: 0px;
+                left: 0px;
+                color: white;
+                text-align: center;
+                background-color: red;
+                margin: 0px;
+                padding: 10px;
+                cursor: pointer;
+            }
+            .inner-banner {
+                display: flex;
+                position: relative;
+                align-items: center;
+                height: 50px;
+            }
+            .banner-words {
+                float: left;
+                width: 90%;
+            }
+            .banner-x {
+                height: 100%;
+                float: right;
+                width: 10%;
+                line-height: 50px;
+                font-weight: bold;
+                font-size: 1.5rem;
+            }
+            .start, .home, .settings_page, .receive, .history, .send, .scan {
+                position: relative;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100%;
+                background-image: url( 'red-circle.gif' );
+                background-size: contain;
+                background-repeat: no-repeat;
+                background-position: 50% 50%;
+            }
+            .start *, .home *, .settings_page *, .receive *, .history *, .send *, .scan *, {
+                height: min-content;
+            }
+            .settings_page, .history {
+                flex-direction: column;
+                justify-content: flex-start;
+                align-items: flex-start;
+                height: auto;
+            }
+            .start .row, .home .row, .receive .row, .history .row, .send .row, .scan .row {
+                width: 100%;
+                text-align: center;
+                word-wrap: break-word;
+            }
+            .settings_page .row {
+                width: 100%;
+            }
+            .history .row {
+                position: relative;
+                top: 3.5rem;
+            }
+            .splash-screen {
+                width: 11rem !important;
+            }
+            button {
+                width: 8rem;
+                padding: .5rem;
+                border: 3px solid red;
+                background-color: orange;
+                border-radius: 10px;
+                cursor: pointer;
+                color: black;
+            }
+            .start-btn {
+                padding: .6rem 30%;
+                width: auto;
+            }
+            .home {
+                display: none;
+            }
+            .settings_page {
+                display: none;
+            }
+            .receive {
+                display: none;
+            }
+            .history {
+                display: none;
+                background-image: none;
+                align-items: center;
+                //overflow: scroll;
+            }
+            .send {
+                display: none;
+            }
+            .scan {
+                display: none;
+            }
+            span {
+                font-size: inherit;
+            }
+            .balance-changer, .balance-changer * {
+                user-select: none;
+            }
+            .flex-row, .settings-flex-row {
+                width: 100%;
+                display: flex;
+                justify-content: space-between;
+                position: absolute;
+                bottom: 0px;
+            }
+            .settings-flex-row {
+                justify-content: center;
+            }
+            .send-btn, .txs-btn, .receive-btn {
+                margin: 1rem;
+            }
+            .txs-btn, .txs-btn-dwn {
+                background-color: transparent;
+                background-image: url( 'white-arrow.png' );
+                background-size: 1rem;
+                background-position: 50% 50%;
+                background-repeat: no-repeat;
+                border: 1px solid white;
+                width: 2rem;
+                height: 2rem;
+                border-radius: 50%;
+                position: relative;
+                top: .4rem;
+            }
+            .settings, .history-down {
+                position: absolute;
+                top: -20px;
+                right: 10px;
+                font-size: 2rem;
+                cursor: pointer;
+            }
+            .history-down {
+                top: 1rem;
+                right: auto;
+                transform: rotate( 180deg );
+            }
+            .backup_words {
+                text-align: center;
+                border: 1px solid white;
+                padding: .3rem;
+            }
+            .import-input {
+                width: 100%;
+            }
+            .import-privkeys {
+                margin-top: 1rem;
+            }
+            @media only screen and ( min-width: 600px ) {
+                body {
+                    border-left: 1px solid white;
+                    border-right: 1px solid white;
+                    position: relative;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="banner">
+            <div class="inner-banner">
+                <div class="banner-words">
+                    Tap to back up your wallet or you might lose your money
+                </div>
+                <div class="banner-x">
+                    &times;
+                </div>
+            </div>
+        </div>
+        <div class="start">
+            <div class="row splash-screen">
+                <h1>void wallet</h1>
+                <p>
+                    <button class="start-btn">Start</button>
+                </p>
+            </div>
+        </div>
+        <div class="home">
+            <div class="settings">⚙️</div>
+            <div class="row">
+                <h1 class="balance-changer sats"><span class="balance"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></span></h1>
+            </div>
+            <div class="flex-row">
+                <button class="send-btn">Send</button>
+                <button class="txs-btn"><span style="opacity: 0;">Txs</span></button>
+                <button class="receive-btn">Receive</button>
+            </div>
+        </div>
+        <div class="settings_page">
+            <div class="row">
+                <h1>Settings</h1>
+            </div>
+            <div class="row">
+                <p>Backup words (write these down or you might lose your money)</p>
+                <div class="backup_words"></div>
+            </div>
+            <div class="row">
+                <p>Import an existing wallet</p>
+                <textarea class="import-input"></textarea>
+                <button class="import-privkeys">Submit</button>
+            </div>
+            <div class="settings-flex-row">
+                <button class="home-btn">Home</button>
+            </div>
+            <div style="clear: all; height: 7rem;"></div>
+        </div>
+        <div class="receive">
+            <div class="row">
+                <div class="address-qr"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></div>
+                <div class="address-line">
+                    <span class="address"></span>
+                </div>
+            </div>
+            <div class="settings-flex-row">
+                <button class="home-btn">Home</button>
+            </div>
+            <div style="clear: all; height: 7rem;"></div>
+        </div>
+        <div class="history">
+            <div class="history-down"><button class="txs-btn-dwn"><span style="opacity: 0;">Txs</span></button></div>
+            <div class="row">
+                <div class="history-table"></div>
+            </div>
+            <div class="settings-flex-row">
+                <button class="home-btn">Home</button>
+            </div>
+            <div style="clear: all; height: 7rem;"></div>
+        </div>
+        <div class="send">
+            <div class="row">
+                <div id="address-input-label">
+                    Address
+                </div>
+                <input type="text" name="send-address-input" id="send-address-input" placeholder="a bitcoin address e.g. tb1ql7w62elx9ucw4pj5lgw4l028hmuw80sndtntxt" />
+                <div id="amount-input-label">
+                    Amount
+                </div>
+                <input type="number" step="1" name="send-amount-input" id="send-amount-input" placeholder="an amount in sats e.g. 503505" />
+                <p>
+                    <button class="scan-btn">Scan</button>
+                </p>
+                <div id="sliderange">
+                    <p>Sats per byte: <span id="sats_per_byte">1</span></p>
+                    <input id="sats_range" type="range" min="1" max="100" value="1">
+                </div>
+                <script>
+                    var slider = document.getElementById( "sats_range" );
+                    var output = document.getElementById( "sats_per_byte" );
+                    output.innerHTML = slider.value;
+                    slider.oninput = function() {
+                        output.innerHTML = this.value;
+                    }
+                </script>
+                <button id="send-money-button" onclick='prepCoinjoin( Number( $( `input[name="send-amount-input"]` ).value ), $( `input[name="send-address-input"]` ).value );'>Send</button>
+                <div id="progress" style="display: none;">
+                    <h2>Progress bar <span id="goal" style="font-size: .8em; font-weight: normal;"></span></h2>
+                    <div id="progressOutline" style="height: 2em; border: 1px solid grey; border-radius: 25px; overflow: hidden;">
+                        <div id="progressBar" style="height: 2em; background-color: #61eb34; width: 0%; transition: width 1s;">
+                        </div>
+                    </div>
+                    <div id="cj_status"></div>
+                </div>
+            </div>
+            <div class="settings-flex-row">
+                <button class="home-btn">Home</button>
+            </div>
+            <div style="clear: all; height: 7rem;"></div>
+        </div>
+        <div class="scan">
+            <div class="row">
+                <div class="camera">
+                  <canvas style="position: absolute; top: 0px; left: 0px; right: 0px; bottom: 0px; margin: auto;" hidden="" id="canvas" class="qr-canvas"></canvas>
+                </div>
+            </div>
+            <div class="settings-flex-row">
+                <button onclick="start();">Cancel</button>
+            </div>
+            <div style="clear: all; height: 7rem;"></div>
+        </div>
+    </body>
     <script>
-    	sessionStorage.clear();
-		var $ = document.querySelector.bind( document );
-		var $$ = document.querySelectorAll.bind( document );
-        var { getSharedSecret, schnorr, utils } = nobleSecp256k1
-        var crypto  = window.crypto 
-        var getRand = size => crypto.getRandomValues(new Uint8Array(size))
-        var sha256  = bitcoinjs.crypto.sha256
-        var nostr_keypair = bitcoinjs.ECPair.makeRandom()
-        var nostr_privKey = nostr_keypair.privateKey.toString( "hex" )
-        var nostr_pubKey  = nostr_keypair.publicKey.toString( "hex" )
-        nostr_pubKey      = nostr_pubKey.substring( 2 )
+        var $ = document.querySelector.bind( document );
+        var $$ = document.querySelectorAll.bind( document );
+        let qrCode = window.qrcode;
+        let scanIcon = $( '.scan-btn' );
+        var video = document.createElement("video");
+        var canvasElement = document.getElementById("canvas");
+        var canvas = canvasElement.getContext("2d");
+        var scanning = false;
+        qrcode.callback = (res) => {
+            if ( res && !String( res ).toLowerCase().includes( "error" ) ) {
+                sessionStorage[ "stop-streaming" ] = true;
+                var uri = parseURI( res );
+                $( '#send-address-input' ).value = uri[ 0 ];
+                if ( uri[ 1 ] ) {
+                    $( '#send-amount-input' ).value = uri[ 1 ];
+                }
+                $( '.scan' ).style.display = "none";
+                $( '.send' ).style.display = "flex";
+                scanning = false;
+                if ( video && video.srcObject ) {
+                    video.srcObject.getTracks().forEach((track) => {
+                        track.stop();
+                    });
+                }
+                canvasElement.hidden = true;
+            }
+        };
+        scanIcon.onclick = () => {
+            $( '.send' ).style.display = "none";
+            $( '.scan' ).style.display = "flex";
+            canvasElement.hidden = false;
+            sessionStorage.removeItem( "stop-streaming" );
+            intval( 0 );
+            if (navigator.mediaDevices) {
+                navigator.mediaDevices
+                .getUserMedia({ video: { facingMode: "environment" } })
+                .then(function (stream) {
+                    scanning = true;
+                    canvasElement.hidden = false;
+                    video.setAttribute("playsinline", true); 
+                    video.srcObject = stream;
+                    video.play();
+                    tick();
+                });
+            }
+        };
+        function tick() {
+            canvasElement.height = video.videoHeight;
+            canvasElement.width = video.videoWidth;
+            canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+            scanning && requestAnimationFrame(tick);
+        }
+        function scan( img ) {
+            try {
+                qrCode.decode( img );
+            } catch (e) {
+            }
+        }
+        function intval( num ) {
+            if ( num > 20 && num % 5 == 0 ) {
+                var img = canvasElement.toDataURL( 'image/png' );
+                scan( img );
+            }
+            num = num + 1;
+            if ( !sessionStorage[ "stop-streaming" ] ) {
+                setTimeout( function() {intval( num );}, 100 );
+            }
+        }
+        $( '.start-btn' ).onclick = function() {start();}
+        $( '.banner-x' ).onclick = function() {
+            localStorage[ "backed-up" ] = true;
+            $( '.banner' ).style.display = "none";
+            $( '.settings' ).style.display = "flex";
+        }
+        $( '.banner-words' ).onclick = function() {
+            $( '.banner' ).style.display = "none";
+            $( '.home' ).style.display = "none";
+            $( '.settings_page' ).style.display = "flex";
+            $( 'html' ).style.height = "auto";
+            $( 'body' ).style.height = "auto";
+        }
+        $( '.settings' ).onclick = function() {
+            $( '.home' ).style.display = "none";
+            $( '.settings_page' ).style.display = "flex";
+            $( 'html' ).style.height = "auto";
+            $( 'body' ).style.height = "auto";
+        }
+        $( '.receive-btn' ).onclick = function() {
+            $( '.home' ).style.display = "none";
+            $( '.receive' ).style.display = "flex";
+        }
+        $( '.txs-btn' ).onclick = function() {
+            $( 'html' ).style.height = "auto";
+            $( 'body' ).style.height = "auto";
+            $( '.home' ).style.display = "none";
+            $( '.history' ).style.display = "flex";
+            if ( sessionStorage[ "history" ] ) {
+                var history = JSON.parse( sessionStorage[ "history" ] );
+                history.forEach( function( item ) {
+                    if ( item[ 0 ] == "in" ) {
+                        $( '.history-table' ).innerHTML += `<p><span style="color: green">&searr;</span> <span title="${item[ 2 ]}">${item[ 1 ]}</span> sats to <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span></p>`;
+                    } else {
+                        $( '.history-table' ).innerHTML += `<p><span style="color: red" title="${item[ 4 ]}">&nearr;</span> <span title="${item[ 2 ]}">${item[ 1 ]}</span> sats from <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span>, fee: ${item[ 4 ]} sats</p>`;
+                    }
+                });
+            } else {
+                $( '.history-table' ).innerHTML = "You don't have any transaction history yet";
+            }
+        }
+        $( '.txs-btn-dwn' ).onclick = function() {
+            start();
+        }
+        $( '.send-btn' ).onclick = function() {
+            $( '#send-address-input' ).value = "";
+            $( '#send-amount-input' ).value = "";
+            $( '.home' ).style.display = "none";
+            $( '.send' ).style.display = "flex";
+        }
+        $( '.balance-changer' ).onclick = function() {changeDenomination( $( '.balance' ).innerText );}
+        $( '.import-privkeys' ).onclick = function() {
+            var new_words = $( '.import-input' ).value.toLowerCase();
+            if ( !backupWordsAreValid( new_words ) ) {
+                alert( "Those backup words are invalid, please try again" );
+                return;
+            }
+            localStorage[ "backup_words" ] = new_words;
+            $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
+            $( '.import-input' ).value = "";
+            sessionStorage.removeItem( "utxos" );
+            sessionStorage.removeItem( "alt_utxo_list" );
+            $( '.balance-changer' ).innerHTML = `<span class="balance"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></span>`
+        }
+        $$( '.home-btn' ).forEach( function( btn ) {
+            btn.onclick = function() {
+                start();
+            }
+        })
+        function start() {
+            $( '.start' ).style.display = "none";
+            $( '.settings_page' ).style.display = "none";
+            $( '.receive' ).style.display = "none";
+            $( '.history' ).style.display = "none";
+            $( '.send' ).style.display = "none";
+            $( '.home' ).style.display = "flex";
+            $( 'html' ).style.height = "100%";
+            $( 'body' ).style.height = "100%";
+            if ( !localStorage[ "backed-up" ] ) {
+                $( '.banner' ).style.display = "block";
+                $( '.settings' ).style.display = "none";
+            }
+        }
+        //start the wallet and check its balance every five seconds
+        if ( !localStorage[ "backup_words" ] ) {
+            localStorage[ "backup_words" ] = bip39.generateMnemonic();
+        }
+        $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
+        async function startWallet( num ) {
+            if ( num == 27 ) {
+                var balance = await displayQuickBalance();
+            } else {
+                var balance = await displayBalance();
+            }
+            if ( balance > -1 ) {
+                $( '.balance-changer' ).innerHTML = `<span class="balance">${balance}</span><br>sats`;
+            } else {
+                $( '.balance-changer' ).innerHTML = `<span class="balance"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></span>`;
+            }
+            var firstUnusedAddress = await getFirstUnusedAddress();
+            $( '.address' ).innerText = firstUnusedAddress;
+            $( '.address-qr' ).innerText = "";
+            $( '.address-qr' ).append( createQR( "bitcoin:" + firstUnusedAddress ) );
+            if ( num == 27 ) {
+                var history = await getHistory();
+                sessionStorage[ "history" ] = JSON.stringify( history );
+            }
+        }
+        var { getSharedSecret, schnorr, utils } = nobleSecp256k1;
+        var crypto  = window.crypto;
+        var getRand = size => crypto.getRandomValues(new Uint8Array(size));
+        var sha256  = bitcoinjs.crypto.sha256;
+        var nostr_keypair = bitcoinjs.ECPair.makeRandom();
+        var nostr_privKey = nostr_keypair.privateKey.toString( "hex" );
+        var nostr_pubKey  = nostr_keypair.publicKey.toString( "hex" );
+        nostr_pubKey      = nostr_pubKey.substring( 2 );
         console.log( "nostr_pubKey:", nostr_pubKey );
         var relay = "wss://nostr-pub.wellorder.net";
         var socket = new WebSocket( relay );
@@ -1075,501 +1928,20 @@
         var filter  = { "#p": [ nostr_pubKey ] }
         socket.addEventListener('open', openConnection );
         var pool = {}
-
-        async function sendDM( message, recipient ) {
-            var encrypted_message = encrypt( nostr_privKey, recipient, message )
-            var encrypted_event = {
-                "content"    : encrypted_message,
-                "created_at" : Math.floor( Date.now() / 1000 ),
-                "kind"       : 20004,
-                "tags"       : [ [ 'p', recipient ] ],
-                "pubkey"     : nostr_pubKey,
-            }
-            var signedEncryptedEvent = await getSignedEvent( encrypted_event, nostr_privKey );
-            socket.send( JSON.stringify( [ "EVENT", signedEncryptedEvent ] ) );
-        }
-
-        async function swimInPool() {
-        	var balance = Number( document.getElementById( "balance" ).innerText );
-        	if ( balance < 1 ) return;
-            var message = String( balance - 546 );
-            var event = {
-                "content"    : message,
-                "created_at" : Math.floor( Date.now() / 1000 ),
-                "kind"       : 10063,
-                "tags"       : [],
-                "pubkey"     : nostr_pubKey,
-            }
-            var signedEvent = await getSignedEvent( event, nostr_privKey );
-            console.log( "pool event:", signedEvent );
-            socket.send( JSON.stringify( [ "EVENT", signedEvent ] ) );
-        }
-
-        async function getSignedEvent(event, privateKey) {
-            var eventData = JSON.stringify([
-                0,                    // Reserved for future use
-                event['pubkey'],        // The sender's public key
-                event['created_at'],    // Unix timestamp
-                event['kind'],        // Message “kind” or type
-                event['tags'],        // Tags identify replies/recipients
-                event['content']        // Your note contents
-            ])
-            event.id  = sha256( eventData ).toString( 'hex' )
-            event.sig = await schnorr.sign( event.id, privateKey ) 
-            return event
-        }
-        function hexToBytes( hex ) {
-            return Uint8Array.from( hex.match( /.{1,2}/g ).map( ( byte ) => parseInt( byte, 16 ) ) );
-        }
-
-        function bytesToHex( bytes ) {
-            return bytes.reduce( ( str, byte ) => str + byte.toString( 16 ).padStart( 2, '0' ), '' );
-        }
-        function base64ToHex( str ) {
-            var raw = atob( str );
-            var result = '';
-            var i; for ( i=0; i<raw.length; i++ ) {
-                var hex = raw.charCodeAt( i ).toString( 16 );
-                result += ( hex.length === 2 ? hex : '0' + hex );
-            }
-            return result;
-        }
-        function encrypt( privkey, pubkey, text ) {
-            var key = nobleSecp256k1.getSharedSecret( privkey, '02' + pubkey, true ).substring( 2 );
-            var iv = window.crypto.getRandomValues(new Uint8Array(16));
-            var cipher = browserifyCipher.createCipheriv( 'aes-256-cbc', hexToBytes( key ), iv );
-            var encryptedMessage = cipher.update(text,"utf8","base64");
-            emsg = encryptedMessage + cipher.final( "base64" );
-            var uint8View = new Uint8Array( iv.buffer );
-            var decoder = new TextDecoder();
-            return emsg + "?iv=" + btoa( String.fromCharCode.apply( null, uint8View ) );
-        }
-        function decrypt( privkey, pubkey, ciphertext ) {
-            var [ emsg, iv ] = ciphertext.split( "?iv=" );
-            var key = nobleSecp256k1.getSharedSecret( privkey, '02' + pubkey, true ).substring( 2 );
-            var decipher = browserifyCipher.createDecipheriv(
-                'aes-256-cbc',
-                hexToBytes( key ),
-                hexToBytes( base64ToHex( iv ) )
-            );
-            var decryptedMessage = decipher.update( emsg, "base64" );
-            dmsg = decryptedMessage + decipher.final( "utf8" );
-            return dmsg;
-        }
-    </script>
-    <script>
-        async function takeNextSteps( message, sender_pubkey ) {
-            var message = JSON.parse( message );
-            if ( message[ "msg_type" ] == "chat" ) {
-                console.log( "message from " + sender_pubkey + ": " + message[ "content" ] );
-                /*
-                usage:
-                var message = {}
-                message[ "msg_type" ] = "chat";
-                message[ "content" ] = "test123";
-                message = JSON.stringify( message );
-                var recipient = <pubkey>;
-                sendDM( message, recipient );
-                */
-            }
-            if ( message[ "msg_type" ] == "start_coinjoin" ) {
-            	//todo: make sure the message content is valid json and has the properties I expect
-                console.log( "message from " + sender_pubkey + ": " + message[ "content" ] );
-                //contribute one or more inputs and send their info to the coinjoin starter
-				var sats_per_byte = Number( JSON.parse( message[ "content" ] )[ "sats_per_byte" ] );
-		        var utxos_available_for_this_transaction = JSON.parse( sessionStorage[ "alt_utxo_list" ] );
-				var utxos_in_this_transaction = [];
-		        var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
-		        var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
-		        var toamount = JSON.parse( message[ "content" ] )[ "amount" ];
-		        var array = await contributeUtxosToCoinjoin( toamount, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
-		        var adjusted_utxos_in_this_transaction = array[ 0 ];
-		        console.log( "utxos I will contribute:", adjusted_utxos_in_this_transaction );
-		        var toaddress = await getFirstUnusedChangeAddress();
-				var participant = {}
-	            participant[ "destination_address" ] = toaddress;
-	            var utxos = [];
-	            adjusted_utxos_in_this_transaction.forEach( function( utxo ) {
-	            	var pub_utxo = {}
-	            	pub_utxo[ "tx_id" ] = utxo[ "tx_id" ];
-	            	pub_utxo[ "output_number" ] = utxo[ "output_number" ];
-	            	pub_utxo[ "amount" ] = utxo[ "amount" ];
-	            	pub_utxo[ "pubkey" ] = utxo[ "pubkey" ];
-	            	utxos.push( pub_utxo );
-	            });
-	            participant[ "utxos" ] = utxos;
-		        if ( array[ 2 ] && array[ 1 ] > 546 ) {
-		        	participant[ "change_amount" ] = array[ 1 ];
-		        	participant[ "change_address" ] = array[ 2 ];
-		        }
-	            console.log( participant );
-	            var message = {}
-	            message[ "msg_type" ] = "fill_roster";
-	            message[ "content" ] = JSON.stringify( participant );
-	            message = JSON.stringify( message );
-	            var recipient = sender_pubkey;
-	            sendDM( message, recipient );
-            }
-            if ( message[ "msg_type" ] == "fill_roster" ) {
-                var it_was_a_duplicate = false;
-            	//todo: make sure the message content is valid json and has the properties I expect
-                if ( !sessionStorage[ "info_about_the_participants" ] ) {
-                    var info_about_the_participants = [];
-                } else {
-                    var info_about_the_participants = JSON.parse( sessionStorage[ "info_about_the_participants" ] );
-                    console.log( "info_about_the_participants:", info_about_the_participants );
-                    var known_utxos = [];
-                    info_about_the_participants.forEach( function( participant ) {
-                    	participant[ "utxos" ].forEach( function( utxo ) {
-                    		known_utxos.push( utxo[ "tx_id" ] + ":" + utxo[ "output_number" ] );
-                    	});
-                    });
-                    console.log( "known_utxos:", known_utxos );
-                    //todo: check if the message is a json and has a key called utxos with the expected values, don't assume that
-                    JSON.parse( message[ "content" ] )[ "utxos" ].forEach( function( utxo ) {
-                    	if ( known_utxos.includes( utxo[ "tx_id" ] + ":" + utxo[ "output_number" ] ) ) {
-                    		it_was_a_duplicate = true;
-                    		console.log( "it was a duplicate" );
-                    		return;
-                    	}
-                    });
+        async function startLoop( num ) {
+            startWallet( num );
+            var bitcoin_price = await getBitcoinPrice();
+            sessionStorage[ "bitcoin_price" ] = bitcoin_price;
+            //checkHeartbeat();
+            if ( num == 30 ) {
+                if ( window.location.href.includes( "pool=true" ) ) {
+                    swimInPool();
                 }
-                //check if the roster is full; if it isn't, wait for more info; if it is, check if the qr code is displayed; if it is, wait for more info; if it is not, display it
-                if ( !it_was_a_duplicate ) {
-                    info_about_the_participants.push( JSON.parse( message[ "content" ] ) );
-                    sessionStorage[ "info_about_the_participants" ] = JSON.stringify( info_about_the_participants );
-                    console.log( `${sender_pubkey} joined your coinjoin!` );
-		            //coinjoiner located...
-		            document.getElementById( "cj_status" ).innerText = "coinjoiner located...";
-					document.getElementById( "progressBar" ).style.width = document.getElementById( "progressBar" ).style.width = Math.floor( document.getElementById( "progressBar" ).offsetWidth / document.getElementById( "progressBar" ).parentElement.offsetWidth * 100 ) + 3 + "%";
-                }
-            	console.log( message[ "content" ] );
+                num = -1;
             }
-            if ( message[ "msg_type" ] == "sign_coinjoin" ) {
-                console.log( "message from " + sender_pubkey + ": " + message[ "content" ] );
-                var it_was_a_duplicate = false;
-                var psbt = bitcoinjs.Psbt.fromHex( message[ "content" ], {network: bitcoinjs.networks.testnet} );
-                var amount_i_put_in = amountIPutIn( psbt );
-                var amount_i_get_out = await amountIGetOut( psbt );
-                if ( isNaN( amount_i_get_out ) || isNaN( amount_i_put_in ) || amount_i_get_out < amount_i_put_in ) return;
-				var cosigned_coinjoin = cosignCoinjoin( psbt );
-	            var message = {}
-	            message[ "msg_type" ] = "coinjoin_is_cosigned";
-	            message[ "content" ] = cosigned_coinjoin;
-	            message = JSON.stringify( message );
-	            var recipient = sender_pubkey;
-	            sendDM( message, recipient );
-            }
-            if ( message[ "msg_type" ] == "coinjoin_is_cosigned" ) {
-                if ( !sessionStorage[ "sigs_info" ] ) {
-                    var sigs_info = [];
-                } else {
-                    var sigs_info = JSON.parse( sessionStorage[ "sigs_info" ] );
-                    console.log( "sigs_info:", sigs_info );
-                    var known_sigs = [];
-                    sigs_info.forEach( function( psbthex ) {
-                    	psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
-                    	psbt.data.inputs.forEach( function( input ) {
-                    		if ( !input[ "partialSig" ] ) return;
-                    		known_sigs.push( JSON.stringify( input[ "partialSig" ] ) );
-                    	});
-                    });
-                    console.log( "known_sigs:", known_sigs );
-                    //todo: check if the psbt is valid, don't assume so
-                    var psbt = bitcoinjs.Psbt.fromHex( message[ "content" ], {network: bitcoinjs.networks.testnet} );
-                    psbt.data.inputs.forEach( function( input ) {
-		                var it_was_a_duplicate = false;
-                    	if ( !input[ "partialSig" ] ) {
-                    		it_was_a_duplicate = true;
-                    		console.log( "it wasn't technically a duplicate but close enough -- it had no signature" );
-                    		return;
-                    	}
-                    	if ( known_sigs.includes( JSON.stringify( input[ "partialSig" ] ) ) ) {
-                    		it_was_a_duplicate = true;
-                    		console.log( "it was a duplicate" );
-                    		return;
-                    	}
-		                //todo: only add the psbthex to the sigs_info if all of the inputs by that user are signed...this will require tracking how many inputs that user needs to sign
-		                if ( !it_was_a_duplicate ) {
-		                	var psbthex = message[ "content" ];
-		                	if ( !sigs_info.includes( psbthex ) ) {
-			                    sigs_info.push( psbthex );
-			                    sessionStorage[ "sigs_info" ] = JSON.stringify( sigs_info );
-			                }
-		                    console.log( `${sender_pubkey} cosigned at least once (it is okay if the message appears two times and it is also okay if it only appears one time)!` );
-				            //signature added...
-				            document.getElementById( "cj_status" ).innerText = "signature added...";
-							document.getElementById( "progressBar" ).style.width = document.getElementById( "progressBar" ).style.width = Math.floor( document.getElementById( "progressBar" ).offsetWidth / document.getElementById( "progressBar" ).parentElement.offsetWidth * 100 ) + 3 + "%";
-		                }
-                    });
-                }
-            }
+            num = num + 1;
+            setTimeout( function() {startLoop( num );}, 10000 );
         }
+        startLoop( 27 );
     </script>
-    <script>
-        function rosterIsFull() {
-            if ( !sessionStorage[ "num_of_participants" ] ) {
-                return false;
-            }
-            if ( !sessionStorage[ "info_about_the_participants" ] ) {
-                var info_about_the_participants = [];
-                sessionStorage[ "info_about_the_participants" ] = JSON.stringify( info_about_the_participants );
-            } else {
-                var info_about_the_participants = JSON.parse( sessionStorage[ "info_about_the_participants" ] );
-            }
-            if ( info_about_the_participants.length == Number( sessionStorage[ "num_of_participants" ] - 1 ) ) {
-                return true;
-            }
-        }
-    </script>
-    <script>
-        function allSignaturesArrived() {
-            if ( !sessionStorage[ "num_of_participants" ] ) {
-                return false;
-            }
-            if ( !sessionStorage[ "sigs_info" ] ) {
-                var sigs_info = [];
-                sessionStorage[ "sigs_info" ] = JSON.stringify( sigs_info );
-            } else {
-                var sigs_info = JSON.parse( sessionStorage[ "sigs_info" ] );
-            }
-            if ( sigs_info.length == Number( sessionStorage[ "num_of_participants" ] ) ) {
-                return true;
-            }
-        }
-    </script>
-    <script>
-        async function isRosterFullYet() {
-            var roster_is_full = await rosterIsFull();
-            return new Promise( function( resolve, reject ) {
-                if ( !roster_is_full ) {
-                    setTimeout( async function() {
-                        var msg = await isRosterFullYet();
-                        resolve( msg );
-                    }, 5000 );
-                } else {
-                    resolve( roster_is_full );
-                }
-            });
-        }
-    </script>
-    <script>
-        async function didAllSignaturesArriveYet() {
-            var all_sigs_here = await allSignaturesArrived();
-            return new Promise( function( resolve, reject ) {
-                if ( !all_sigs_here ) {
-                    setTimeout( async function() {
-                        var msg = await didAllSignaturesArriveYet();
-                        resolve( msg );
-                    }, 5000 );
-                } else {
-                    resolve( all_sigs_here );
-                }
-            });
-        }
-    </script>
-    <script>
-        function isValidAddress( address ) {
-            try{
-                return ( typeof( bitcoinjs.address.toOutputScript( address, bitcoinjs.networks.testnet ) ) == "object" );
-            } catch( e ) {
-                return false;
-            }
-        }
-    </script>
-	<script>
-		async function prepCoinjoin( toamount, toaddress ) {
-			if ( !isValidAddress( toaddress ) ) {
-				alert( "You entered an invalid address" );
-				return;
-			}
-			document.getElementById( "progress" ).style.display = "block";
-			var other_participants = [];
-			Object.keys( pool ).forEach( function( amount ) {
-				if ( toamount <= amount && other_participants.length < 10 ) {
-					pool[ amount ].forEach( function( joiner ) {
-						if ( other_participants.length < 10 ) {
-							other_participants.push( joiner[ "joiner" ] )
-						}
-					});
-				}
-			});
-			console.log( "other_participants:", other_participants );
-            //reaching out to other_participants.length other people...
-		    document.getElementById( "cj_status" ).innerText = `reaching out to ${other_participants.length} other people...`;
-			document.getElementById( "progressBar" ).style.width = "10%";
-			var sats_per_byte = Number( document.getElementById( "sats_per_byte" ).innerText );
-            sessionStorage[ "num_of_participants" ] = other_participants.length + 1;
-			var participant = {}
-	        participant[ "amount" ] = toamount;
-            participant[ "num_of_participants" ] = other_participants.length + 1;
-            participant[ "destination_address" ] = toaddress;
-	        participant[ "sats_per_byte" ] = sats_per_byte;
-            console.log( "participant:", participant );
-            var info_about_the_participants = [];
-            info_about_the_participants.push( participant );
-            var message = {}
-            message[ "msg_type" ] = "start_coinjoin";
-            message[ "content" ] = JSON.stringify( participant );
-            message = JSON.stringify( message );
-            var i; for ( i=0; i<other_participants.length; i++ ) {
-            	console.log( "sending a message to:", other_participants[ i ] );
-	            sendDM( message, other_participants[ i ] );
-	            var timeout = await waitSomeSeconds( 2 );
-        	}
-            var roster_is_full = await isRosterFullYet();
-            //all coinjoiners located...
-		    document.getElementById( "cj_status" ).innerText = `enough coinjoiners located...`;
-			document.getElementById( "progressBar" ).style.width = "50%";
-            console.log( "roster is full, right?", roster_is_full );
-            var participants = JSON.parse( sessionStorage[ "info_about_the_participants" ] );
-            var coinjoin_inputs = [];
-            var coinjoin_outputs = [];
-            participants.forEach( function( participant ) {
-            	participant[ "utxos" ].forEach( function( utxo ) {
-            		coinjoin_inputs.push( utxo );
-            	});
-            });
-            participants.forEach( function( participant ) {
-            	if ( participant[ "change_amount" ] && Number( participant[ "change_amount" ] ) > 546 ) {
-	            	var sum_of_this_participants_utxos = 0;
-	            	participant[ "utxos" ].forEach( function( utxo ) {
-	            		sum_of_this_participants_utxos = sum_of_this_participants_utxos + utxo[ "amount" ];
-	            	});
-	            	var real_change = sum_of_this_participants_utxos - toamount;
-	            	if ( real_change != Number( participant[ "change_amount" ] ) ) {
-	            		alert( `Scammer! True change due: ${real_change} Desired change due: ${Number( participant[ "change_amount" ] )}` );
-	            		return;
-	            	}
-	            }
-            	coinjoin_outputs.push( [ participant[ "destination_address" ], toamount ] );
-            	if ( participant[ "change_address" ] && Number( participant[ "change_amount" ] ) ) {
-            		coinjoin_outputs.push( [ participant[ "change_address" ], real_change ] );
-            	}
-            });
-            console.log( coinjoin_inputs );
-            console.log( coinjoin_outputs );
-	        var utxos_available_for_this_transaction = JSON.parse( sessionStorage[ "alt_utxo_list" ] );
-			var utxos_in_this_transaction = [];
-	        var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
-	        var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
-		    var amount_plus_fee = toamount + ( ( 125 * coinjoin_inputs.length + 1 ) + ( 50 * coinjoin_outputs.length + 1 ) ) * sats_per_byte;
-            //creating coinjoin transaction...
-		    document.getElementById( "cj_status" ).innerText = `creating coinjoin transaction...`;
-			document.getElementById( "progressBar" ).style.width = "60%";
-	        var array = addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
-	        if ( !array ) return;
-	        if ( array[ 0 ] && array[ 0 ].length > 0 && array[ 1 ] && array[ 2 ] && array[ 3 ] && array[ 4 ] && array[ 5 ] ) {
-	                var adjusted_utxos_available_for_this_transaction = array[ 0 ];
-	                var adjusted_utxos_in_this_transaction = array[ 1 ];
-	                amount_plus_fee = array[ 2 ];
-	        } else {
-	                var adjusted_utxos_available_for_this_transaction = [];
-	                var adjusted_utxos_in_this_transaction = [];
-	                amount_plus_fee = 0;
-	        }
-	        var adjusted_utxos_in_this_transaction = array[ 1 ];
-	        amount_plus_fee = array[ 2 ];
-	        if ( array[ 5 ] && array[ 3 ] && Number( array[ 3 ] ) > 546 ) {
-	                var change_amount = array[ 3 ];
-	                console.log( "change_amount", change_amount );
-	                var change_address = await getFirstUnusedChangeAddress();
-		            coinjoin_outputs.push( [ change_address, change_amount ] );
-	        } else {
-	                var change_amount = 0;
-	                var change_address = "none";
-	        }
-		    coinjoin_outputs.push( [ toaddress, toamount ] );
-	        console.log( "adjusted_utxos_available_for_this_transaction", adjusted_utxos_available_for_this_transaction );
-	        console.log( "adjusted_utxos_in_this_transaction", adjusted_utxos_in_this_transaction );
-	        console.log( "amount_plus_fee", amount_plus_fee );
-            adjusted_utxos_in_this_transaction.forEach( function( utxo ) {
-            	var pub_utxo = {}
-            	pub_utxo[ "tx_id" ] = utxo[ "tx_id" ];
-            	pub_utxo[ "output_number" ] = utxo[ "output_number" ];
-            	pub_utxo[ "amount" ] = utxo[ "amount" ];
-            	pub_utxo[ "pubkey" ] = utxo[ "pubkey" ];
-            	pub_utxo[ "privkey" ] = utxo[ "privkey" ];
-            	coinjoin_inputs.push( pub_utxo );
-            });
-		    console.log( "inputs:", coinjoin_inputs );
-		    console.log( "outputs:", coinjoin_outputs );
-            var cj_psbt = startCoinjoin( toamount, coinjoin_inputs, coinjoin_outputs );
-            var signed_cj = signCoinjoin( toamount, coinjoin_inputs, coinjoin_outputs );
-            sessionStorage[ "sigs_info" ] = JSON.stringify( [signed_cj] );
-            console.log( "here is the coinjoin psbt:", cj_psbt );
-            //asking everyone to sign...
-		    document.getElementById( "cj_status" ).innerText = `asking everyone to sign...`;
-			document.getElementById( "progressBar" ).style.width = "75%";
-            //todo: reestimate the transaction fee before sending the transaction out for signatures. I probably can't predict an exact fee since I don't know the sig lengths yet but if I do the estimate with an assumed max sig size of 74 bytes then I will be erring on the side of caution (but note that if there are 100 people and their sigs are on average 2 bytes shorter than my estimate then I am overpaying by 200 bytes multiplied by however many sats per byte I choose...which can result in quite a large surcharge, such as 6000 sats if I pay 30 sats per byte).
-            var message = {}
-            message[ "msg_type" ] = "sign_coinjoin";
-            message[ "content" ] = cj_psbt;
-            message = JSON.stringify( message );
-            var i; for ( i=0; i<other_participants.length; i++ ) {
-	            sendDM( message, other_participants[ i ] );
-            }
-            var sigs_are_here = await didAllSignaturesArriveYet();
-            //everyone signed...
-		    document.getElementById( "cj_status" ).innerText = `everyone signed...`;
-			document.getElementById( "progressBar" ).style.width = "95%";
-			var timeout = await waitSomeSeconds( 2 );
-            console.log( "the sigs are all here, right?", sigs_are_here );
-            var signed_psbts = JSON.parse( sessionStorage[ "sigs_info" ] );
-            var final_psbt = bitcoinjs.Psbt.fromHex( cj_psbt, {network: bitcoinjs.networks.testnet} );
-            signed_psbts.forEach( function( psbthex ) {
-            	var psbt = bitcoinjs.Psbt.fromHex( psbthex, {network: bitcoinjs.networks.testnet} );
-            	psbt.data.inputs.forEach( function( input, index ) {
-            		if ( !input[ "partialSig" ] ) return;
-            		final_psbt.data.inputs[ index ][ "partialSig" ] = input[ "partialSig" ];
-            	});
-            });
-            final_psbt.finalizeAllInputs();
-            final_psbt_hex = final_psbt.toHex();
-            console.log( "final_psbt:", final_psbt_hex );
-            console.log( "final_txhex:", final_psbt.extractTransaction().toHex() );
-            sessionStorage.removeItem( "num_of_participants" );
-            sessionStorage.removeItem( "info_about_the_participants" );
-            sessionStorage.removeItem( "sigs_info" );
-            var tx = bitcoinjs.Transaction.fromHex( final_psbt.extractTransaction().toHex() );
-            console.log( `the transaction is this size (in bytes): ${tx.virtualSize()}`);
-            console.log( `the transaction fee is: ${final_psbt.getFee()} sats`);
-            var sat_or_sats = ( final_psbt.getFeeRate() == 1 ) ? "sat":"sats";
-            var conf = confirm( `This transaction will send ${toamount} sats to ${toaddress} through a coinjoin with ${other_participants.length + 1} people. The mining fee will cost ${final_psbt.getFee()} sats, which gives you a fee rate close to ${final_psbt.getFeeRate()} ${ sat_or_sats} per byte. (Note that it is hard to get a coinjoin's feerate to precisely match what you want. This should be close.) If you are okay with that, please click okay, otherwise you can cancel the payment.` );
-            if ( !conf ) {
-				document.getElementById( "progress" ).style.display = "none";
-				document.getElementById( "progressBar" ).style.width = "0%";
-            	return;
-            }
-			document.getElementById( "progress" ).style.display = "none";
-			document.getElementById( "progressBar" ).style.width = "0%";
-            var txid = await pushBTCpmt( final_psbt.extractTransaction().toHex() );
-            console.log( "Your transaction was broadcasted, your txid is: " + txid );
-		}
-	</script>
-	<script>
-		function waitSomeSeconds( num ) {
-          var num = num.toString() + "000";
-          num = Number( num );
-          return new Promise( function( resolve, reject ) {
-            setTimeout( function() { resolve( "" ); }, num );
-          });
-        }
-	</script>
-    <script>
-		function startLoop( num ) {
-			startWallet();
-			checkHeartbeat();
-			if ( num == 30 ) {
-				if ( window.location.href.includes( "pool=true" ) ) {
-					swimInPool();
-				}
-				num = -1;
-			}
-			num = num + 1;
-			setTimeout( function() {startLoop( num );}, 10000 );
-		}
-		startLoop( 27 );
-    </script>
-</body>
 </html>
