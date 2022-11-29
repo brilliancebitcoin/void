@@ -617,141 +617,6 @@
                     }
                 }
             }
-/*
-            function craftTransaction( selected_utxos, to_amount, to_address, change_address, change_amount, sats_per_byte ) {
-                if ( !to_amount ) {
-                    return;
-                }
-                if ( change_amount != 0 && change_address != "none" ) {
-                    var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet });
-                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
-                       psbt.addInput({
-                            hash: selected_utxos[ i ][ "tx_id" ],
-                            index: selected_utxos[ i ][ "output_number" ],
-                            witnessUtxo: {
-                                script: buffer.Buffer.from( '0014' + bitcoinjs.crypto.ripemd160( bitcoinjs.crypto.sha256( buffer.Buffer.from( selected_utxos[ i ][ "pubkey" ], "hex" ) ) ).toString( 'hex' ), 'hex' ),
-                                value: selected_utxos[ i ][ "amount" ],
-                            },
-                       });
-                    }
-                    psbt.addOutput({
-                        address: to_address,
-                        value: to_amount,
-                    });
-                    psbt.addOutput({
-                        address: change_address,
-                        value: change_amount,
-                    });
-                    var keyPairSenders = [];
-                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
-                        keyPairSenders.push( bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( selected_utxos[ i ][ "privkey" ], "hex" ), bitcoinjs.networks.testnet ) );
-                    }
-                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
-                        psbt.signInput( i, keyPairSenders[ i ] );
-                    }
-                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
-                        psbt.validateSignaturesOfInput( i );
-                    }
-                    psbt.finalizeAllInputs();
-                    return psbt.extractTransaction().toHex();
-                } else {
-                    var psbt = new bitcoinjs.Psbt({ network: bitcoinjs.networks.testnet });
-                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
-                       psbt.addInput({
-                            hash: selected_utxos[ i ][ "tx_id" ],
-                            index: selected_utxos[ i ][ "output_number" ],
-                            witnessUtxo: {
-                                script: buffer.Buffer.from( '0014' + bitcoinjs.crypto.ripemd160( bitcoinjs.crypto.sha256( buffer.Buffer.from( selected_utxos[ i ][ "pubkey" ], "hex" ) ) ).toString( 'hex' ), 'hex' ),
-                                value: selected_utxos[ i ][ "amount" ],
-                            },
-                       });
-                    }
-                    psbt.addOutput({
-                        address: to_address,
-                        value: to_amount,
-                    });
-                    var keyPairSenders = [];
-                    var i; for ( i=0; i<selected_utxos.length; i++ ) {
-                        keyPairSenders.push( bitcoinjs.ECPair.fromPrivateKey( buffer.Buffer.from( selected_utxos[ i ][ "privkey" ], "hex" ), bitcoinjs.networks.testnet ) );
-                    }
-                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
-                        psbt.signInput( i, keyPairSenders[ i ] );
-                    }
-                    var i; for ( i=0; i<keyPairSenders.length; i++ ) {
-                        psbt.validateSignaturesOfInput( i );
-                    }
-                    psbt.finalizeAllInputs();
-                    return psbt.extractTransaction().toHex();
-                }
-            }
-            async function sendFromUtxoSetToAddress( toamount, toaddress, sats_per_byte, utxos_available_for_this_transaction, utxos_in_this_transaction ) {
-                console.log( "to amount", toamount );
-                console.log( "sats per byte", sats_per_byte );
-                var amount_plus_fee = toamount + ( 150 * sats_per_byte );
-                console.log( "amount_plus_fee", amount_plus_fee );
-                if ( !utxos_available_for_this_transaction ) {
-                    var utxos_available_for_this_transaction = JSON.parse( sessionStorage[ "alt_utxo_list" ] );
-                }
-                if ( !utxos_in_this_transaction ) {
-                    var utxos_in_this_transaction = [];
-                }
-                var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
-                var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
-                var array = addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
-                if ( array[ 0 ] && array[ 0 ].length > 0 && array[ 1 ] && array[ 2 ] && array[ 3 ] && array[ 4 ] && array[ 5 ] ) {
-                    var adjusted_utxos_available_for_this_transaction = array[ 0 ];
-                    var adjusted_utxos_in_this_transaction = array[ 1 ];
-                    amount_plus_fee = array[ 2 ];
-                } else {
-                    var adjusted_utxos_available_for_this_transaction = [];
-                    var adjusted_utxos_in_this_transaction = [];
-                    amount_plus_fee = 0;
-                }
-                var adjusted_utxos_in_this_transaction = array[ 1 ];
-                amount_plus_fee = array[ 2 ];
-                if ( array[ 5 ] && array[ 3 ] && Number( array[ 3 ] ) > 546 ) {
-                    var change_amount = array[ 3 ];
-                    console.log( "change_amount", change_amount );
-                    var change_address = await getFirstUnusedChangeAddress();
-                } else {
-                    var change_amount = 0;
-                    var change_address = "none";
-                }
-                console.log( "adjusted_utxos_available_for_this_transaction", adjusted_utxos_available_for_this_transaction );
-                console.log( "adjusted_utxos_in_this_transaction", adjusted_utxos_in_this_transaction );
-                console.log( "amount_plus_fee", amount_plus_fee );
-                var txhex = craftTransaction( adjusted_utxos_in_this_transaction, toamount, toaddress, change_address, change_amount, sats_per_byte );
-                console.log( txhex );
-                var tx = bitcoinjs.Transaction.fromHex( txhex );
-                var virtual_bytes = tx.virtualSize();
-                var real_fee = virtual_bytes * sats_per_byte;
-                var new_amount_plus_fee = toamount + real_fee;
-                console.log( "now I will check what the original utxos available are" );
-                console.log( original_utxos_available_for_this_transaction );
-                console.log( JSON.parse( original_utxos_available_for_this_transaction ) );
-                console.log( "I will also check what the original utxos in the transaction are", JSON.parse( original_utxos_in_this_transaction ) );
-                console.log( "Ok I am about to rerun addUtxosToTx with the new fee in mind. The most important variable for this is new_amount_plus_fee, which is the amount I am sending,", toamount, "plus a variable where the number of actual bytes in this transaction, i.e.", virtual_bytes, "is multiplied by the sats per byte value, i.e.", sats_per_byte, "to give a result of", real_fee, "which I add to my to_amount to get a total new_amount_plus_fee of", new_amount_plus_fee );
-                var new_array = addUtxosToTx( new_amount_plus_fee, JSON.parse( original_utxos_available_for_this_transaction ), JSON.parse( original_utxos_in_this_transaction ), sats_per_byte, false, true, virtual_bytes, toamount );
-                console.log( "I need a change address, right? (This should be at least the second time I am asking this)", new_array[ 5 ] );
-                var new_adjusted_utxos_available_for_this_transaction = new_array[ 0 ];
-                var new_adjusted_utxos_in_this_transaction = new_array[ 1 ];
-                new_amount_plus_fee = new_array[ 2 ];
-                var new_change_amount = new_array[ 3 ];
-                if( Number( new_array[ 3 ] ) >= 546 && ( !change_address || change_address == "none" ) && new_array[ 5 ] ) {
-                    var change_address = await getFirstUnusedChangeAddress();
-                }
-                var new_txhex = craftTransaction( new_adjusted_utxos_in_this_transaction, toamount, toaddress, change_address, new_change_amount, sats_per_byte );
-                console.log( new_txhex );
-                var new_tx = bitcoinjs.Transaction.fromHex( new_txhex );
-                var new_virtual_bytes = tx.virtualSize();
-                if ( new_virtual_bytes == virtual_bytes ) {
-                    console.log( "yay! The transaction is ready and here is its hex:", new_txhex );
-                    return new_txhex;
-                } else {
-                    alert( "I tried to craft your transaction twice and I kept getting errors. Please contact the developer of this wallet for assistance." );
-                }
-            }
-*/
             function createQR( content ) {
                 var dataUriPngImage = document.createElement( "img" ),
                 s = QRCode.generatePNG( content, {
@@ -1806,6 +1671,7 @@
             $( '.home' ).style.display = "none";
             $( '.history' ).style.display = "flex";
             if ( sessionStorage[ "history" ] ) {
+                $( '.history-table' ).innerHTML = "";
                 var history = JSON.parse( sessionStorage[ "history" ] );
                 history.forEach( function( item ) {
                     if ( item[ 0 ] == "in" ) {
