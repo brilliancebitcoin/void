@@ -253,6 +253,7 @@
             async function getAvailableUtxosFromReceivePath() {
                 return new Promise( async function( resolve, reject ) {
                     var available_utxos = [];
+                    //todo: fix the following situation. i1 counts addresses with utxos and i2 counts addresses with no utxos. When i2 hits 20 the counting stops and the wallet assumes no more addresses will have utxos. I am not sure why it does that. It should probably have a third counter that starts counting when an address never had money and proceeds til 20 of those go by (or resets to 0 if an address did have money), then stop counting uxtos after that
                     var i1 = 0;
                     var i2 = 0;
                     var i; for ( i=0; i<100000; i++ ) {
@@ -286,6 +287,7 @@
             async function getAvailableUtxosFromChangePath() {
                 return new Promise( async function( resolve, reject ) {
                     var available_utxos = [];
+                    //todo: fix the following situation. i1 counts addresses with utxos and i2 counts addresses with no utxos. When i2 hits 20 the counting stops and the wallet assumes no more addresses will have utxos. I am not sure why it does that. It should probably have a third counter that starts counting when an address never had money and proceeds til 20 of those go by (or resets to 0 if an address did have money), then stop counting uxtos after that
                     var i1 = 0;
                     var i2 = 0;
                     var i; for ( i=0; i<100000; i++ ) {
@@ -347,6 +349,7 @@
 
             async function getFirstUnusedAddress() {
                 var i; for ( i=0; i<100000; i++ ) {
+                    console.log( `${i} of 20` );
                     var backupwords = localStorage[ "backup_words" ];
                     var path = "84'/0'/0'";
                     var privkey = getPrivkeyHexFromPath( backupwords, path, i );
@@ -1755,7 +1758,7 @@
                     }
                 });
             } else {
-                $( '.history-table' ).innerHTML = "You don't have any transaction history yet";
+                $( '.history-table' ).innerHTML = "You don't have any transaction history or it hasn't synced yet";
             }
         }
         $( '.txs-btn-dwn' ).onclick = function() {
@@ -1812,7 +1815,7 @@
             localStorage[ "backup_words" ] = bip39.generateMnemonic();
         }
         $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
-        async function startWallet( num ) {
+        async function syncBalance( num ) {
             if ( !sessionStorage[ "initialized" ] ) {
                 if ( num == 27 ) {
                     var balance = await displayQuickBalance();
@@ -1841,6 +1844,12 @@
                 }
                 $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/40</span></span>`;
             }
+            if ( num == 27 ) {
+                var history = await getHistory();
+                sessionStorage[ "history" ] = JSON.stringify( history );
+            }
+        }
+        async function syncAddress() {
             if ( sessionStorage[ "first-unused-address" ] ) {
                 //checking if the address I call my first unused address received any money
                 var hadMoney = await didThisAddressEverHaveMoney( sessionStorage[ "first-unused-address" ] );
@@ -1862,10 +1871,6 @@
             $( '.address' ).innerText = firstUnusedAddress;
             $( '.address-qr' ).innerText = "";
             $( '.address-qr' ).append( createQR( "bitcoin:" + firstUnusedAddress ) );
-            if ( num == 27 ) {
-                var history = await getHistory();
-                sessionStorage[ "history" ] = JSON.stringify( history );
-            }
         }
         var { getSharedSecret, schnorr, utils } = nobleSecp256k1;
         var crypto  = window.crypto;
@@ -1884,7 +1889,8 @@
         socket.addEventListener('open', openConnection );
         var pool = {}
         async function startLoop( num ) {
-            startWallet( num );
+            syncBalance( num );
+            syncAddress();
             var bitcoin_price = await getBitcoinPrice();
             sessionStorage[ "bitcoin_price" ] = bitcoin_price;
             checkHeartbeat();
