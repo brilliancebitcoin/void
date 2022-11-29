@@ -1373,7 +1373,7 @@
                 if ( uri.includes( "//" ) ) {
                     uri = uri.substring( uri.indexOf( "//" ) + 2 );
                 }
-                if ( !uri.includes( ":" ) ) return uri;
+                if ( !uri.includes( ":" ) ) return [uri];
                 uri = uri.substring( uri.indexOf( ":" ) + 1 );
                 var amount = getParameterByName( "amount", uri );
                 if ( amount ) {
@@ -1853,6 +1853,7 @@
             $( '.receive' ).style.display = "none";
             $( '.history' ).style.display = "none";
             $( '.send' ).style.display = "none";
+            $( '.scan' ).style.display = "none";
             $( '.home' ).style.display = "flex";
             $( 'html' ).style.height = "100%";
             $( 'body' ).style.height = "100%";
