@@ -1886,6 +1886,11 @@
                 $( '.banner' ).style.display = "block";
                 $( '.settings' ).style.display = "none";
             }
+            if ( video && video.srcObject ) {
+                video.srcObject.getTracks().forEach((track) => {
+                    track.stop();
+                });
+            }
         }
         //start the wallet and check its balance every five seconds
         if ( !localStorage[ "backup_words" ] ) {
