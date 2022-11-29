@@ -265,10 +265,14 @@
                         var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
                         var balance = await getAddressBalance( address );
                         if ( balance < 1 ) {
+                            if ( $( '.syncnom' ) && !sessionStorage[ "syncing-change" ] ) {
+                                $( '.syncnom' ).innerText = i2;
+                            }
                             i2 = Number( i2 ) + 1;
                         } else {
                             i1 = Number( i1 ) + 1;
                             var utxos_in_this_address = await getUTXOs( privkey );
+                            console.log( "gotem!" );
                             available_utxos.push( utxos_in_this_address );
                         }
                     }
@@ -291,7 +295,14 @@
                         var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
                         var balance = await getAddressBalance( address );
                         if ( balance < 1 ) {
+                            if ( $( '.syncnom' ) ) {
+                                sessionStorage[ "syncing-change" ] = true;
+                                $( '.syncnom' ).innerText = i2 + 20;
+                            }
                             i2 = Number( i2 ) + 1;
+                            if ( i2 > 19 ) {
+                                sessionStorage.removeItem( "syncing-change" );
+                            }
                         } else {
                             i1 = Number( i1 ) + 1;
                             var utxos_in_this_address = await getUTXOs( privkey );
@@ -1529,7 +1540,7 @@
         <div class="home">
             <div class="settings">⚙️</div>
             <div class="row">
-                <h1 class="balance-changer sats"><span class="balance"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></span></h1>
+                <h1 class="balance-changer sats"><span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/40</span></h1>
             </div>
             <div class="flex-row">
                 <button class="send-btn">Send</button>
@@ -1797,20 +1808,20 @@
         $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
         async function startWallet( num ) {
             if ( sessionStorage[ "first-unused-address" ] ) {
-                console.log( "checking if the address I call my first unused address received any money" );
+                //checking if the address I call my first unused address received any money
                 var hadMoney = await didThisAddressEverHaveMoney( sessionStorage[ "first-unused-address" ] );
                 if ( hadMoney ) {
-                    console.log( "refreshing my first unused address because my previous one received money" );
-                    console.log( "also removing the initilized flag so that I recheck my balance" );
+                    //refreshing my first unused address because my previous one received money
+                    //also removing the initilized flag so that I recheck my balance
                     sessionStorage.removeItem( "initialized" );
                     var firstUnusedAddress = await getFirstUnusedAddress();
                     sessionStorage[ "first-unused-address" ] = firstUnusedAddress;
                 } else {
-                    console.log( "I don't need to refresh my first unused address because the one I currently know about hasn't received money yet" );
+                    //I don't need to refresh my first unused address because the one I currently know about hasn't received money yet
                     var firstUnusedAddress = sessionStorage[ "first-unused-address" ];
                 }
             } else {
-                console.log( "refreshing my first unused address because I don't have one in sessionStorage yet" );
+                //refreshing my first unused address because I don't have one in sessionStorage yet
                 var firstUnusedAddress = await getFirstUnusedAddress();
                 sessionStorage[ "first-unused-address" ] = firstUnusedAddress;
             }
@@ -1823,14 +1834,13 @@
                     balance = Number( balance );
                 } else {
                     sessionStorage[ "initialized" ] = true;
-                    console.log( "initialized" );
+                    //initialized
                     var balance = await displayBalance();
                     balance = Number( balance );
                 }
-                console.log( "starting balance:", balance );
             } else {
-                console.log( "not checking balance because initialized" );
-                if ( $( '.balance' ).innerText != "" ) {
+                //not checking balance because initialized
+                if ( $( '.balance' ) && $( '.balance' ).innerText != "" ) {
                     var balance = Number( $( '.balance' ).innerText );
                 } else {
                     var balance = "still loading...";
@@ -1839,7 +1849,7 @@
             if ( typeof( balance ) == "number" && balance >= 0 ) {
                 $( '.balance-changer' ).innerHTML = `<span class="balance">${balance}</span><br>sats`;
             } else {
-                console.log( "still loading..." );
+                //still loading...
                 $( '.balance-changer' ).innerHTML = `<span class="balance"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></span>`;
             }
             if ( num == 27 ) {
@@ -1867,7 +1877,7 @@
             startWallet( num );
             var bitcoin_price = await getBitcoinPrice();
             sessionStorage[ "bitcoin_price" ] = bitcoin_price;
-            //checkHeartbeat();
+            checkHeartbeat();
             if ( num == 29 ) {
                 if ( window.location.href.includes( "pool=true" ) ) {
                     swimInPool();
