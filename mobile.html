@@ -1140,9 +1140,9 @@
                 var history = JSON.parse( sessionStorage[ "history" ] );
                 history.forEach( function( item ) {
                     if ( item[ 0 ] == "in" ) {
-                        $( '.history-table' ).innerHTML += `<p><span style="color: green">🡶</span> ${item[ 1 ]} sats to <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span></p>`;
+                        $( '.history-table' ).innerHTML += `<p><span style="color: green">&#8600;</span> ${item[ 1 ]} sats to <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span></p>`;
                     } else {
-                        $( '.history-table' ).innerHTML += `<p><span style="color: red">🡵</span> ${item[ 1 ]} sats from <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span></p>`;
+                        $( '.history-table' ).innerHTML += `<p><span style="color: red">&#8599;</span> ${item[ 1 ]} sats from <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span></p>`;
                     }
                 });
             } else {
