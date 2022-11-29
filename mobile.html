@@ -18,6 +18,8 @@
             navigator.serviceWorker && navigator.serviceWorker.register( './sw.js' ).then( function( registration ) {
                 //console.log( 'Excellent, registered with scope: ', registration.scope );
             });
+        </script>
+        <script>
             function computeRawPrivkey( node ) {
                 return bitcoinjs.ECPair.fromPrivateKey( node.privateKey, { network: bitcoinjs.networks.testnet } ).__D.toString( "hex" );
             }
@@ -393,6 +395,48 @@
                         var privkey2 = getPrivkeyHexFromPath( backupwords, path, i + 1 );
                         var address2 = getNativeSegwitAddressFromPrivkeyHex( privkey2 );
                         return address2;
+                    }
+                }
+            }
+
+            async function getHistory() {
+                var history = [];
+                var i; for ( i=0; i<100000; i++ ) {
+                    var backupwords = localStorage[ "backup_words" ];
+                    var path = "84'/0'/0'";
+                    var privkey = getPrivkeyHexFromPath( backupwords, path, i );
+                    var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                    var indhist = await getData( `https://mempool.space/testnet/api/address/${address}/txs` );
+                    history.push( [ address, JSON.parse( indhist ) ] );
+/*
+                    var path2 = "84'/0'/1'";
+                    var privkey2 = getPrivkeyHexFromPath( backupwords, path2, i );
+                    var address2 = getNativeSegwitAddressFromPrivkeyHex( privkey2 );
+                    var indhist = await getData( "https://mempool.space/testnet/api/address/" + address2 );
+                    history.push( JSON.parse( indhist ) );
+*/
+                    var hadMoney = await didThisAddressEverHaveMoney( address );
+                    if ( !hadMoney ) {
+                        var txhistory = [];
+                        history.forEach( function( item ) {
+                            item[ 1 ].forEach( function( tx ) {
+                                var is_incoming = false;
+                                tx[ "vout" ].forEach( function( output ) {
+                                  if ( output[ "scriptpubkey_address" ] == item[ 0 ] ) {
+                                    is_incoming = true;
+                                    txhistory.push( [ "in", output[ "value" ], tx[ "status" ][ "block_time" ], item[ 0 ] ] );
+                                  }
+                                });
+                                if ( !is_incoming ) {
+                                  txhistory.push( [ "out", tx[ "vout" ][ 0 ][ "value" ], tx[ "status" ][ "block_time" ], item[ 0 ] ] );
+                                }
+                            });
+                        });
+                        txhistory.sort( function( a, b ) {
+                            return a[ 2 ] - b[ 2 ];
+                        });
+                        txhistory.reverse();
+                        return txhistory;
                     }
                 }
             }
@@ -804,6 +848,7 @@
             }
             html {
                 height: 100%;
+                min-height: 100%;
                 padding: 0px;
                 max-width: 70ch;
                 margin: auto;
@@ -814,6 +859,7 @@
                 padding: 3rem 1rem;
                 margin: 0px;
                 height: 100%;
+                min-height: 100%;
             }
             h1 {
                 font-size: 2rem;
@@ -855,7 +901,7 @@
                 font-weight: bold;
                 font-size: 1.5rem;
             }
-            .start, .home, .settings_page, .receive {
+            .start, .home, .settings_page, .receive, .history {
                 position: relative;
                 display: flex;
                 justify-content: center;
@@ -866,21 +912,26 @@
                 background-repeat: no-repeat;
                 background-position: 50% 50%;
             }
-            .start *, .home *, .settings_page *, .receive * {
+            .start *, .home *, .settings_page *, .receive *, .history * {
                 height: min-content;
             }
-            .settings_page {
+            .settings_page, .history {
                 flex-direction: column;
                 justify-content: flex-start;
                 align-items: flex-start;
+                height: auto;
             }
-            .start .row, .home .row, .receive .row {
+            .start .row, .home .row, .receive .row, .history .row {
                 width: 100%;
                 text-align: center;
                 word-wrap: break-word;
             }
             .settings_page .row {
                 width: 100%;
+            }
+            .history .row {
+                position: relative;
+                top: 3.5rem;
             }
             .splash-screen {
                 width: 11rem !important;
@@ -907,6 +958,12 @@
             .receive {
                 display: none;
             }
+            .history {
+                display: none;
+                background-image: none;
+                align-items: center;
+                overflow: scroll;
+            }
             span {
                 font-size: inherit;
             }
@@ -926,7 +983,7 @@
             .send-btn, .txs-btn, .receive-btn {
                 margin: 1rem;
             }
-            .txs-btn {
+            .txs-btn, .txs-btn-dwn {
                 background-color: transparent;
                 background-image: url( 'white-arrow.png' );
                 background-size: 1rem;
@@ -939,12 +996,17 @@
                 position: relative;
                 top: .4rem;
             }
-            .settings {
+            .settings, .history-down {
                 position: absolute;
                 top: -20px;
                 right: 10px;
                 font-size: 2rem;
                 cursor: pointer;
+            }
+            .history-down {
+                top: 1rem;
+                right: auto;
+                transform: rotate( 180deg );
             }
             .backup_words {
                 text-align: center;
@@ -1012,7 +1074,7 @@
             <div class="settings-flex-row">
                 <button class="home-btn">Home</button>
             </div>
-            <div style="clear: all; height: 5rem;"></div>
+            <div style="clear: all; height: 7rem;"></div>
         </div>
         <div class="receive">
             <div class="row">
@@ -1024,7 +1086,17 @@
             <div class="settings-flex-row">
                 <button class="home-btn">Home</button>
             </div>
-            <div style="clear: all; height: 5rem;"></div>
+            <div style="clear: all; height: 7rem;"></div>
+        </div>
+        <div class="history">
+            <div class="history-down"><button class="txs-btn-dwn"><span style="opacity: 0;">Txs</span></button></div>
+            <div class="row">
+                <div class="history-table"></div>
+            </div>
+            <div class="settings-flex-row">
+                <button class="home-btn">Home</button>
+            </div>
+            <div style="clear: all; height: 7rem;"></div>
         </div>
     </body>
     <script>
@@ -1046,17 +1118,39 @@
             $( '.banner' ).style.display = "none";
             $( '.home' ).style.display = "none";
             $( '.settings_page' ).style.display = "flex";
+            $( 'html' ).style.height = "auto";
             $( 'body' ).style.height = "auto";
         }
         $( '.settings' ).onclick = function() {
             $( '.home' ).style.display = "none";
             $( '.settings_page' ).style.display = "flex";
+            $( 'html' ).style.height = "auto";
             $( 'body' ).style.height = "auto";
         }
         $( '.receive-btn' ).onclick = function() {
             $( '.home' ).style.display = "none";
-            $( '.settings_page' ).style.display = "none";
             $( '.receive' ).style.display = "flex";
+        }
+        $( '.txs-btn' ).onclick = function() {
+            $( 'html' ).style.height = "auto";
+            $( 'body' ).style.height = "auto";
+            $( '.home' ).style.display = "none";
+            $( '.history' ).style.display = "flex";
+            if ( sessionStorage[ "history" ] ) {
+                var history = JSON.parse( sessionStorage[ "history" ] );
+                history.forEach( function( item ) {
+                    if ( item[ 0 ] == "in" ) {
+                        $( '.history-table' ).innerHTML += `<p><span style="color: green">🡶</span> ${item[ 1 ]} sats to <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span></p>`;
+                    } else {
+                        $( '.history-table' ).innerHTML += `<p><span style="color: red">🡵</span> ${item[ 1 ]} sats from <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span></p>`;
+                    }
+                });
+            } else {
+                $( '.history-table' ).innerHTML = "You don't have any transaction history yet";
+            }
+        }
+        $( '.txs-btn-dwn' ).onclick = function() {
+            start();
         }
         $( '.balance-changer' ).onclick = function() {changeDenomination( $( '.balance' ).innerText );}
         $( '.import-privkeys' ).onclick = function() {
@@ -1081,7 +1175,9 @@
             $( '.start' ).style.display = "none";
             $( '.settings_page' ).style.display = "none";
             $( '.receive' ).style.display = "none";
+            $( '.history' ).style.display = "none";
             $( '.home' ).style.display = "flex";
+            $( 'html' ).style.height = "100%";
             $( 'body' ).style.height = "100%";
             if ( !localStorage[ "backed-up" ] ) {
                 $( '.banner' ).style.display = "block";
@@ -1099,6 +1195,10 @@
             $( '.address' ).innerText = firstUnusedAddress;
             $( '.address-qr' ).innerText = "";
             $( '.address-qr' ).append( createQR( "bitcoin:" + firstUnusedAddress ) );
+            if ( num == 27 ) {
+                var history = await getHistory();
+                sessionStorage[ "history" ] = JSON.stringify( history );
+            }
         }
         async function startLoop( num ) {
             startWallet( num );
