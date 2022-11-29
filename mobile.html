@@ -9,6 +9,7 @@
         <title>void wallet</title>
         <script src="https://supertestnet.github.io/bitcoin-chess/js/qrcode.js"></script>
         <script src="https://bitcoincore.tech/apps/bitcoinjs-ui/lib/bitcoinjs-lib.js"></script>
+        <script src="https://rawgit.com/sitepoint-editors/jsqrcode/master/src/qr_packed.js"></script>
         <script src="https://bundle.run/noble-secp256k1@1.2.14"></script>
         <script src="https://bundle.run/bip39@3.0.4"></script>
         <script src="https://bundle.run/bip32@2.0.6"></script>
@@ -473,6 +474,7 @@
                     var utxos = JSON.parse( sessionStorage[ "utxos" ] );
                 } else {
                     var utxos = [];
+                    var loading = true;
                 }
                 alt_utxo_list = [];
                 utxos.forEach( function( item ) {
@@ -482,6 +484,9 @@
                     }
                 });
                 sessionStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
+                if ( loading ) {
+                    return -1;
+                }
                 return Number( balance ).toString();
             }
 
@@ -1384,6 +1389,34 @@
                     }
                 }, 2000 );
             }
+            function getParameterByName( name, string ) {
+                name = name.replace(/[\[\]]/g, '\\$&');
+                var regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
+                    results = regex.exec(string);
+                if (!results) return null;
+                if (!results[2]) return '';
+                return decodeURIComponent(results[2].replace(/\+/g, ' '));
+            }
+            function parseURI( uri ) {
+                if ( uri.includes( "//" ) ) {
+                    uri = uri.substring( uri.indexOf( "//" ) + 2 );
+                }
+                if ( !uri.includes( ":" ) ) return uri;
+                uri = uri.substring( uri.indexOf( ":" ) + 1 );
+                var amount = getParameterByName( "amount", uri );
+                if ( amount ) {
+                    amount = amount * 100000000;
+                }
+                if ( uri.includes( "?" ) ) {
+                    uri = uri.substring( 0, uri.indexOf( "?" ) );
+                }
+                var array = [];
+                array.push( uri );
+                if ( amount ) {
+                    array.push( amount );
+                }
+                return array;
+            }
         </script>
         <style>
             * {
@@ -1447,7 +1480,7 @@
                 font-weight: bold;
                 font-size: 1.5rem;
             }
-            .start, .home, .settings_page, .receive, .history, .send {
+            .start, .home, .settings_page, .receive, .history, .send, .scan {
                 position: relative;
                 display: flex;
                 justify-content: center;
@@ -1458,7 +1491,7 @@
                 background-repeat: no-repeat;
                 background-position: 50% 50%;
             }
-            .start *, .home *, .settings_page *, .receive *, .history *, .send * {
+            .start *, .home *, .settings_page *, .receive *, .history *, .send *, .scan *, {
                 height: min-content;
             }
             .settings_page, .history {
@@ -1467,7 +1500,7 @@
                 align-items: flex-start;
                 height: auto;
             }
-            .start .row, .home .row, .receive .row, .history .row, .send .row {
+            .start .row, .home .row, .receive .row, .history .row, .send .row, .scan .row {
                 width: 100%;
                 text-align: center;
                 word-wrap: break-word;
@@ -1511,6 +1544,9 @@
                 //overflow: scroll;
             }
             .send {
+                display: none;
+            }
+            .scan {
                 display: none;
             }
             span {
@@ -1657,17 +1693,20 @@
                     Amount
                 </div>
                 <input type="number" step="1" name="send-amount-input" id="send-amount-input" placeholder="an amount in sats e.g. 503505" />
+                <p>
+                    <button class="scan-btn">Scan</button>
+                </p>
                 <div id="sliderange">
-                  <p>Sats per byte: <span id="sats_per_byte">1</span></p>
-                  <input id="sats_range" type="range" min="1" max="100" value="1">
+                    <p>Sats per byte: <span id="sats_per_byte">1</span></p>
+                    <input id="sats_range" type="range" min="1" max="100" value="1">
                 </div>
                 <script>
-                        var slider = document.getElementById( "sats_range" );
-                        var output = document.getElementById( "sats_per_byte" );
-                        output.innerHTML = slider.value;
-                        slider.oninput = function() {
-                                output.innerHTML = this.value;
-                        }
+                    var slider = document.getElementById( "sats_range" );
+                    var output = document.getElementById( "sats_per_byte" );
+                    output.innerHTML = slider.value;
+                    slider.oninput = function() {
+                        output.innerHTML = this.value;
+                    }
                 </script>
                 <button id="send-money-button" onclick='prepCoinjoin( Number( $( `input[name="send-amount-input"]` ).value ), $( `input[name="send-address-input"]` ).value );'>Send</button>
                 <div id="progress" style="display: none;">
@@ -1684,16 +1723,87 @@
             </div>
             <div style="clear: all; height: 7rem;"></div>
         </div>
+        <div class="scan">
+            <div class="row">
+                <div class="camera">
+                  <canvas style="position: absolute; top: 0px; left: 0px; right: 0px; bottom: 0px; margin: auto;" hidden="" id="canvas" class="qr-canvas"></canvas>
+                </div>
+            </div>
+            <div class="settings-flex-row">
+                <button onclick="start();">Cancel</button>
+            </div>
+            <div style="clear: all; height: 7rem;"></div>
+        </div>
     </body>
     <script>
-        //sessionStorage.clear();
         var $ = document.querySelector.bind( document );
         var $$ = document.querySelectorAll.bind( document );
-        //start the wallet and check its balance every five seconds
-        if ( !localStorage[ "backup_words" ] ) {
-            localStorage[ "backup_words" ] = bip39.generateMnemonic();
+        let qrCode = window.qrcode;
+        let scanIcon = $( '.scan-btn' );
+        var video = document.createElement("video");
+        var canvasElement = document.getElementById("canvas");
+        var canvas = canvasElement.getContext("2d");
+        var scanning = false;
+        qrcode.callback = (res) => {
+            if ( res && !String( res ).toLowerCase().includes( "error" ) ) {
+                sessionStorage[ "stop-streaming" ] = true;
+                var uri = parseURI( res );
+                $( '#send-address-input' ).value = uri[ 0 ];
+                if ( uri[ 1 ] ) {
+                    $( '#send-amount-input' ).value = uri[ 1 ];
+                }
+                $( '.scan' ).style.display = "none";
+                $( '.send' ).style.display = "flex";
+                scanning = false;
+                if ( video && video.srcObject ) {
+                    video.srcObject.getTracks().forEach((track) => {
+                        track.stop();
+                    });
+                }
+                canvasElement.hidden = true;
+            }
+        };
+        scanIcon.onclick = () => {
+            $( '.send' ).style.display = "none";
+            $( '.scan' ).style.display = "flex";
+            canvasElement.hidden = false;
+            sessionStorage.removeItem( "stop-streaming" );
+            intval( 0 );
+            if (navigator.mediaDevices) {
+                navigator.mediaDevices
+                .getUserMedia({ video: { facingMode: "environment" } })
+                .then(function (stream) {
+                    scanning = true;
+                    canvasElement.hidden = false;
+                    video.setAttribute("playsinline", true); 
+                    video.srcObject = stream;
+                    video.play();
+                    tick();
+                });
+            }
+        };
+        function tick() {
+            canvasElement.height = video.videoHeight;
+            canvasElement.width = video.videoWidth;
+            canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+            scanning && requestAnimationFrame(tick);
         }
-        $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
+        function scan( img ) {
+            try {
+                qrCode.decode( img );
+            } catch (e) {
+            }
+        }
+        function intval( num ) {
+            if ( num > 20 && num % 5 == 0 ) {
+                var img = canvasElement.toDataURL( 'image/png' );
+                scan( img );
+            }
+            num = num + 1;
+            if ( !sessionStorage[ "stop-streaming" ] ) {
+                setTimeout( function() {intval( num );}, 100 );
+            }
+        }
         $( '.start-btn' ).onclick = function() {start();}
         $( '.banner-x' ).onclick = function() {
             localStorage[ "backed-up" ] = true;
@@ -1739,6 +1849,8 @@
             start();
         }
         $( '.send-btn' ).onclick = function() {
+            $( '#send-address-input' ).value = "";
+            $( '#send-amount-input' ).value = "";
             $( '.home' ).style.display = "none";
             $( '.send' ).style.display = "flex";
         }
@@ -1775,13 +1887,22 @@
                 $( '.settings' ).style.display = "none";
             }
         }
+        //start the wallet and check its balance every five seconds
+        if ( !localStorage[ "backup_words" ] ) {
+            localStorage[ "backup_words" ] = bip39.generateMnemonic();
+        }
+        $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
         async function startWallet( num ) {
             if ( num == 27 ) {
                 var balance = await displayQuickBalance();
             } else {
                 var balance = await displayBalance();
             }
-            $( '.balance-changer' ).innerHTML = `<span class="balance">${balance}</span><br>sats`;
+            if ( balance > -1 ) {
+                $( '.balance-changer' ).innerHTML = `<span class="balance">${balance}</span><br>sats`;
+            } else {
+                $( '.balance-changer' ).innerHTML = `<span class="balance"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></span>`;
+            }
             var firstUnusedAddress = await getFirstUnusedAddress();
             $( '.address' ).innerText = firstUnusedAddress;
             $( '.address-qr' ).innerText = "";
