@@ -1772,7 +1772,7 @@
             $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
             $( '.import-input' ).value = "";
             sessionStorage.clear();
-            $( '.balance-changer' ).innerHTML = `<span class="balance"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></span>`
+            $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/40</span></span>`
             $( '.address-qr' ).innerHTML = `<img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;">`
             $( '.address' ).innerText = "";
         }
@@ -1850,7 +1850,7 @@
                 $( '.balance-changer' ).innerHTML = `<span class="balance">${balance}</span><br>sats`;
             } else {
                 //still loading...
-                $( '.balance-changer' ).innerHTML = `<span class="balance"><img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;"></span>`;
+                $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/40</span></span>`;
             }
             if ( num == 27 ) {
                 var history = await getHistory();
