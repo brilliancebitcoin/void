@@ -422,18 +422,29 @@
                             item[ 1 ].forEach( function( tx ) {
                                 var is_incoming = false;
                                 tx[ "vout" ].forEach( function( output ) {
-                                  if ( output[ "scriptpubkey_address" ] == item[ 0 ] ) {
-                                    is_incoming = true;
-                                    txhistory.push( [ "in", output[ "value" ], tx[ "status" ][ "block_time" ], item[ 0 ] ] );
-                                  }
+                                    if ( output[ "scriptpubkey_address" ] == item[ 0 ] ) {
+                                        is_incoming = true;
+                                        txhistory.push( [ "in", output[ "value" ], tx[ "status" ][ "block_time" ], item[ 0 ] ] );
+                                    }
                                 });
                                 if ( !is_incoming ) {
-                                  txhistory.push( [ "out", tx[ "vout" ][ 0 ][ "value" ], tx[ "status" ][ "block_time" ], item[ 0 ] ] );
+                                    var fee = 0;
+                                    tx[ "vin" ].forEach( function( input ) {
+                                        fee = fee + input[ "prevout" ][ "value" ];
+                                    });
+                                    tx[ "vout" ].forEach( function( output ) {
+                                        fee = fee - output[ "value" ];
+                                    });
+                                    txhistory.push( [ "out", tx[ "vout" ][ 0 ][ "value" ], tx[ "status" ][ "block_time" ], item[ 0 ], fee ] );
                                 }
                             });
                         });
                         txhistory.sort( function( a, b ) {
-                            return a[ 2 ] - b[ 2 ];
+                            var num = a[ 2 ] - b[ 2 ];
+                            if ( num == 0 ) {
+                                num = 1;
+                            }
+                            return num;
                         });
                         txhistory.reverse();
                         return txhistory;
@@ -1140,9 +1151,9 @@
                 var history = JSON.parse( sessionStorage[ "history" ] );
                 history.forEach( function( item ) {
                     if ( item[ 0 ] == "in" ) {
-                        $( '.history-table' ).innerHTML += `<p><span style="color: green">&searr;</span> ${item[ 1 ]} sats to <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span></p>`;
+                        $( '.history-table' ).innerHTML += `<p><span style="color: green">&searr;</span> <span title="${item[ 2 ]}">${item[ 1 ]}</span> sats to <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span></p>`;
                     } else {
-                        $( '.history-table' ).innerHTML += `<p><span style="color: red">&nearr;</span> ${item[ 1 ]} sats from <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span></p>`;
+                        $( '.history-table' ).innerHTML += `<p><span style="color: red" title="${item[ 4 ]}">&nearr;</span> <span title="${item[ 2 ]}">${item[ 1 ]}</span> sats from <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span>, fee: ${item[ 4 ]} sats</p>`;
                     }
                 });
             } else {
