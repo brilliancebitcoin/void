@@ -266,7 +266,10 @@
                         var balance = await getAddressBalance( address );
                         if ( balance < 1 ) {
                             if ( $( '.syncnom' ) && !sessionStorage[ "syncing-change" ] ) {
-                                $( '.syncnom' ).innerText = i2;
+                                var old_nominator = Number( $( '.syncnom' ).innerText );
+                                if ( i2 > old_nominator ) {
+                                    $( '.syncnom' ).innerText = i2;
+                                }
                             }
                             i2 = Number( i2 ) + 1;
                         } else {
@@ -297,7 +300,10 @@
                         if ( balance < 1 ) {
                             if ( $( '.syncnom' ) ) {
                                 sessionStorage[ "syncing-change" ] = true;
-                                $( '.syncnom' ).innerText = i2 + 20;
+                                var old_nominator = Number( $( '.syncnom' ).innerText );
+                                if ( i2 + 20 > old_nominator ) {
+                                    $( '.syncnom' ).innerText = i2 + 20;
+                                }
                             }
                             i2 = Number( i2 ) + 1;
                             if ( i2 > 19 ) {
@@ -1850,7 +1856,11 @@
                 $( '.balance-changer' ).innerHTML = `<span class="balance">${balance}</span><br>sats`;
             } else {
                 //still loading...
-                $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/40</span></span>`;
+                var nominator = 0;
+                if ( $( '.syncnom' ) ) {
+                    nominator = Number( $( '.syncnom' ).innerText );
+                }
+                $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/40</span></span>`;
             }
             if ( num == 27 ) {
                 var history = await getHistory();
