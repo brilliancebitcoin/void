@@ -664,7 +664,9 @@
                     xhttp.onreadystatechange = function() {
                         if ( this.readyState == 4 && ( this.status >= 200 && this.status < 300 ) ) {
                             resolve( xhttp.responseText );
-                        };
+                        } else if ( this.readyState == 4 ) {
+                            resolve( "error" );
+                        }
                     }
                     xhttp.open( "GET", url, true );
                     xhttp.send();
@@ -672,6 +674,9 @@
             }
             async function getBitcoinPriceFromCoinbase() {
                     var data = await getData( "https://api.coinbase.com/v2/prices/BTC-USD/spot" );
+                    if ( data == "error" ) {
+                        return 0;
+                    }
                     var json = JSON.parse( data );
                     var price = json[ "data" ][ "amount" ];
                     return price;
@@ -679,6 +684,9 @@
 
             async function getBitcoinPriceFromKraken() {
                     var data = await getData( "https://api.kraken.com/0/public/Ticker?pair=XBTUSD" );
+                    if ( data == "error" ) {
+                        return 0;
+                    }
                     var json = JSON.parse( data );
                     var price = json[ "result" ][ "XXBTZUSD" ][ "a" ][ 0 ];
                     return price;
@@ -686,6 +694,9 @@
 
             async function getBitcoinPriceFromCoindesk() {
                     var data = await getData( "https://api.coindesk.com/v1/bpi/currentprice.json" );
+                    if ( data == "error" ) {
+                        return 0;
+                    }
                     var json = JSON.parse( data );
                     var price = json[ "bpi" ][ "USD" ][ "rate_float" ];
                     return price;
@@ -693,6 +704,9 @@
 
             async function getBitcoinPriceFromGemini() {
                     var data = await getData( "https://api.gemini.com/v2/ticker/BTCUSD" );
+                    if ( data == "error" ) {
+                        return 0;
+                    }
                     var json = JSON.parse( data );
                     var price = json[ "bid" ];
                     return price;
@@ -700,6 +714,9 @@
 
             async function getBitcoinPriceFromBybit() {
                     var data = await getData( "https://api-testnet.bybit.com/derivatives/v3/public/order-book/L2?category=linear&symbol=BTCUSDT" );
+                    if ( data == "error" ) {
+                        return 0;
+                    }
                     var json = JSON.parse( data );
                     var price = json[ "result" ][ "b" ][ 0 ][ 0 ];
                     return price;
