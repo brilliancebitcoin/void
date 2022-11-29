@@ -670,11 +670,51 @@
                     xhttp.send();
                 });
             }
+            async function getBitcoinPriceFromCoinbase() {
+                    var data = await getData( "https://api.coinbase.com/v2/prices/BTC-USD/spot" );
+                    var json = JSON.parse( data );
+                    var price = json[ "data" ][ "amount" ];
+                    return price;
+            }
+
+            async function getBitcoinPriceFromKraken() {
+                    var data = await getData( "https://api.kraken.com/0/public/Ticker?pair=XBTUSD" );
+                    var json = JSON.parse( data );
+                    var price = json[ "result" ][ "XXBTZUSD" ][ "a" ][ 0 ];
+                    return price;
+            }
+
+            async function getBitcoinPriceFromCoindesk() {
+                    var data = await getData( "https://api.coindesk.com/v1/bpi/currentprice.json" );
+                    var json = JSON.parse( data );
+                    var price = json[ "bpi" ][ "USD" ][ "rate_float" ];
+                    return price;
+            }
+
+            async function getBitcoinPriceFromGemini() {
+                    var data = await getData( "https://api.gemini.com/v2/ticker/BTCUSD" );
+                    var json = JSON.parse( data );
+                    var price = json[ "bid" ];
+                    return price;
+            }
+
+            async function getBitcoinPriceFromBybit() {
+                    var data = await getData( "https://api-testnet.bybit.com/derivatives/v3/public/order-book/L2?category=linear&symbol=BTCUSDT" );
+                    var json = JSON.parse( data );
+                    var price = json[ "result" ][ "b" ][ 0 ][ 0 ];
+                    return price;
+            }
+
             async function getBitcoinPrice() {
-                var data = await getData( "https://api.coinbase.com/v2/prices/BTC-USD/spot" );
-                var json = JSON.parse( data );
-                var price = json[ "data" ][ "amount" ];
-                return price;
+                var prices = [];
+                var cbprice = await getBitcoinPriceFromCoinbase();
+                var kprice = await getBitcoinPriceFromKraken();
+                var cdprice = await getBitcoinPriceFromCoindesk();
+                var gprice = await getBitcoinPriceFromGemini();
+                var bprice = await getBitcoinPriceFromBybit();
+                prices.push( Number( cbprice ), Number( kprice ), Number( cdprice ), Number( gprice ), Number( bprice ) );
+                prices.sort();
+                return prices[ 2 ];
             }
             function satsToBitcoin( sats ) {
                 return "0." + String( sats ).padStart( 8, "0" );
