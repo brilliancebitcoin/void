@@ -1813,27 +1813,6 @@
         }
         $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
         async function startWallet( num ) {
-            if ( sessionStorage[ "first-unused-address" ] ) {
-                //checking if the address I call my first unused address received any money
-                var hadMoney = await didThisAddressEverHaveMoney( sessionStorage[ "first-unused-address" ] );
-                if ( hadMoney ) {
-                    //refreshing my first unused address because my previous one received money
-                    //also removing the initilized flag so that I recheck my balance
-                    sessionStorage.removeItem( "initialized" );
-                    var firstUnusedAddress = await getFirstUnusedAddress();
-                    sessionStorage[ "first-unused-address" ] = firstUnusedAddress;
-                } else {
-                    //I don't need to refresh my first unused address because the one I currently know about hasn't received money yet
-                    var firstUnusedAddress = sessionStorage[ "first-unused-address" ];
-                }
-            } else {
-                //refreshing my first unused address because I don't have one in sessionStorage yet
-                var firstUnusedAddress = await getFirstUnusedAddress();
-                sessionStorage[ "first-unused-address" ] = firstUnusedAddress;
-            }
-            $( '.address' ).innerText = firstUnusedAddress;
-            $( '.address-qr' ).innerText = "";
-            $( '.address-qr' ).append( createQR( "bitcoin:" + firstUnusedAddress ) );
             if ( !sessionStorage[ "initialized" ] ) {
                 if ( num == 27 ) {
                     var balance = await displayQuickBalance();
@@ -1862,6 +1841,27 @@
                 }
                 $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/40</span></span>`;
             }
+            if ( sessionStorage[ "first-unused-address" ] ) {
+                //checking if the address I call my first unused address received any money
+                var hadMoney = await didThisAddressEverHaveMoney( sessionStorage[ "first-unused-address" ] );
+                if ( hadMoney ) {
+                    //refreshing my first unused address because my previous one received money
+                    //also removing the initilized flag so that I recheck my balance
+                    sessionStorage.removeItem( "initialized" );
+                    var firstUnusedAddress = await getFirstUnusedAddress();
+                    sessionStorage[ "first-unused-address" ] = firstUnusedAddress;
+                } else {
+                    //I don't need to refresh my first unused address because the one I currently know about hasn't received money yet
+                    var firstUnusedAddress = sessionStorage[ "first-unused-address" ];
+                }
+            } else {
+                //refreshing my first unused address because I don't have one in sessionStorage yet
+                var firstUnusedAddress = await getFirstUnusedAddress();
+                sessionStorage[ "first-unused-address" ] = firstUnusedAddress;
+            }
+            $( '.address' ).innerText = firstUnusedAddress;
+            $( '.address-qr' ).innerText = "";
+            $( '.address-qr' ).append( createQR( "bitcoin:" + firstUnusedAddress ) );
             if ( num == 27 ) {
                 var history = await getHistory();
                 sessionStorage[ "history" ] = JSON.stringify( history );
