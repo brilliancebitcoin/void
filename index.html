@@ -349,7 +349,6 @@
 
             async function getFirstUnusedAddress() {
                 var i; for ( i=0; i<100000; i++ ) {
-                    console.log( `${i} of 20` );
                     var backupwords = localStorage[ "backup_words" ];
                     var path = "84'/0'/0'";
                     var privkey = getPrivkeyHexFromPath( backupwords, path, i );
@@ -1828,7 +1827,10 @@
                 }
             } else {
                 //not checking balance because initialized
-                if ( $( '.balance' ) && $( '.balance' ).innerText != "" ) {
+                //the last item in the following if block is meant to fix the following situation:
+                //My phone once switched from a numeric balance to the "Syncing..." message.
+                //So, if the balance can be parsed as a number, this prevents the syncing message from displaying.
+                if ( $( '.balance' ) && $( '.balance' ).innerText != "" && !isNaN( parseInt( $( '.balance' ).innerText ) ) ) {
                     var balance = Number( $( '.balance' ).innerText );
                 } else {
                     var balance = "still loading...";
