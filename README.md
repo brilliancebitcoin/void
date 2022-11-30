@@ -31,11 +31,7 @@ If you want to park your coins somewhere where they will constantly coinjoin, vo
 
 # Who is the coordinator in void wallet?
 
-Your wallet acts as the coordinator whenever you hit the Send button. It creates a psbt, goes out to find other people who use this wallet, and invites them to be in the coinjoin. (Actually that statement is aspirational -- right now you have to manually find people to do a coinjoin with and type in their pubkeys. Give it time.) Then you pass your psbt back and forth with your selected coinjoiners until everyone has contributed some coins and cosigned the transaction. Then you broadcast the signed transaction. Since *your wallet* is the coordinator for *your transactions,* you don't have to pay anyone to do the coordination for you, and law enforcers have no central intermediary to target for enforcement. They'll never know who is coordinating what!
-
-# Why is this wallet the ugliest wallet I've ever seen?
-
-It's not, it's stark and simple, which is only ugly to *some* people, not to me. The reason why it's stark and simple is because it's not done yet. I based it on [this project](https://github.com/supertestnet/vanilla-js-browser-wallet) in which I tried to make a general purpose wallet that any developer can customize to look how they want. I haven't customized this new wallet yet so it looks pretty much exactly like its dad. When all the functionalithy I want is present I'll try to make it prettier. (2 weeks TM.)
+Your wallet acts as the coordinator whenever you hit the Send button. It creates a psbt, goes out to find other people who use this wallet, and invites them to be in the coinjoin. Then you pass your psbt back and forth with your invited coinjoiners until everyone has contributed some coins and cosigned the transaction. Then you broadcast the signed transaction. Since *your wallet* is the coordinator for *your transactions,* you don't have to pay anyone to do the coordination for you, and law enforcers have no central intermediary to target for enforcement. They'll never know who is coordinating what!
 
 # You said earlier that this wallet can only receive money if it's in a coinjoin. Can you say more about that?
 
