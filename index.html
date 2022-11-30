@@ -1861,6 +1861,33 @@
             localStorage[ "backup_words" ] = bip39.generateMnemonic();
         }
         $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
+        var onlongtouch;
+        var timer;
+        var touchduration = 800;
+        $( '.balance-changer' ).onpointerdown = function() {
+            onlongtouch = function() {
+                timer = null;
+                var conf = confirm( "Do you want to resync?" );
+                if ( !conf ) return;
+                resync();
+            };
+            if (!timer) {
+                timer = setTimeout( onlongtouch, touchduration );
+            }
+        }
+        $( '.balance-changer' ).onpointerup = function( e ) {
+            if ( timer ) clearTimeout( timer );
+        }
+        function resync() {
+            $( '.import-input' ).value = $( '.backup_words' ).innerText;
+            $( '.import-privkeys' ).click();
+            setTimeout( function() {
+                $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span>`;
+            }, 50 );
+            setTimeout( function() {
+                $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span>`;
+            }, 2050 );
+        }
         async function syncBalance( num ) {
             if ( !sessionStorage[ "initialized" ] ) {
                 if ( num == 27 ) {
