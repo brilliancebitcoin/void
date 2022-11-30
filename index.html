@@ -1279,7 +1279,8 @@
                     Object.keys( pool ).forEach( function( key ) {
                         var amountpool = pool[ key ];
                         amountpool.forEach( function( joiner, index ) {
-                            if ( joiner[ "timestamp" ] < Math.floor( Date.now() / 1000 ) - 300 ) {
+                            //the second condition, in parentheses, removes someone from the pool if they send a cancel event
+                            if ( joiner[ "timestamp" ] < Math.floor( Date.now() / 1000 ) - 300 || ( joiner[ "joiner" ] == event.pubkey && content == "cancel" ) ) {
                                 amountpool.splice( index, 1 );
                                 pool[ key ] = amountpool;
                             }
@@ -1288,10 +1289,19 @@
                             delete pool[ key ];
                         }
                     });
+                    //prevent the addition of duplicate entries to the pool
+                    var do_not_add = false;
+                    Object.keys( pool ).forEach( function( key ) {
+                        pool[ key ].forEach( function( joiner ) {
+                            if ( joiner[ "joiner" ] == event.pubkey && Number( key ) == Number( content ) ) {
+                                do_not_add = true;
+                            }
+                        });
+                    });
                     //add a new entry to the pool
-                    if ( !pool[ content ] ) {
+                    if ( !pool[ content ] && !isNaN( parseInt( content ) ) && !do_not_add ) {
                         pool[ content ] = [{"joiner": event.pubkey, "timestamp": event.created_at}];
-                    } else {
+                    } else if ( !isNaN( parseInt( content ) ) && !do_not_add ) {
                         pool[ content ].push( {"joiner": event.pubkey, "timestamp": event.created_at} );
                     }
                     console.log( Math.floor( Date.now() / 1000 ), pool );
@@ -1541,11 +1551,20 @@
             .import-privkeys {
                 margin-top: 1rem;
             }
+            .pool {
+                display: none;
+            }
+            .leave {
+                display: none;
+            }
             @media only screen and ( min-width: 600px ) {
                 body {
                     border-left: 1px solid white;
                     border-right: 1px solid white;
                     position: relative;
+                }
+                .pool {
+                    display: block;
                 }
             }
         </style>
@@ -1592,6 +1611,14 @@
                 <p>Import an existing wallet</p>
                 <textarea class="import-input"></textarea>
                 <button class="import-privkeys">Submit</button>
+            </div>
+            <div class="pool">
+                <div style="margin-top: 2rem; border-top: 1px solid white; width: 100%;">&nbsp;</div>
+                <div class="row">
+                    <p>Enter the coinjoin pool to coinjoin constantly</p>
+                    <button class="swim">Enter pool</button>
+                    <button class="leave">Leave pool</button>
+                </div>
             </div>
             <div class="settings-flex-row">
                 <button class="home-btn">Home</button>
@@ -1675,6 +1702,7 @@
     <script>
         var $ = document.querySelector.bind( document );
         var $$ = document.querySelectorAll.bind( document );
+        sessionStorage.removeItem( "pool" );
         sessionStorage.removeItem( "initialized" );
         if ( !localStorage[ "index-of-first-known-unused-receive-address" ] ) {
             localStorage[ "index-of-first-known-unused-receive-address" ] = 0;
@@ -1819,6 +1847,7 @@
             sessionStorage.removeItem( "first-unused-address" );
             sessionStorage.removeItem( "initialized" );
             sessionStorage.removeItem( "syncing-change" );
+            sessionStorage.removeItem( "pool" );
             $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span>`;
             $( '.address-qr' ).innerHTML = `<img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;">`;
             $( '.address' ).innerText = "";
@@ -1836,6 +1865,40 @@
                 start();
             }
         });
+        $( '.swim' ).onclick = async function() {
+            $( '.swim' ).style.display = "none";
+            $( '.leave' ).style.display = "inline";
+            sessionStorage[ "pool" ] = true;
+            var balance = Number( $( '.balance' ).innerText );
+            if ( balance < 1 ) return;
+            var message = String( balance - 546 );
+            var event = {
+                "content"    : message,
+                "created_at" : Math.floor( Date.now() / 1000 ),
+                "kind"       : 10063,
+                "tags"       : [],
+                "pubkey"     : nostr_pubKey,
+            }
+            var signedEvent = await getSignedEvent( event, nostr_privKey );
+            console.log( "pool event:", signedEvent );
+            socket.send( JSON.stringify( [ "EVENT", signedEvent ] ) );
+        }
+        $( '.leave' ).onclick = async function() {
+            $( '.leave' ).style.display = "none";
+            $( '.swim' ).style.display = "inline";
+            sessionStorage.removeItem( "pool" );
+            var message = "cancel";
+            var event = {
+                "content"    : message,
+                "created_at" : Math.floor( Date.now() / 1000 ),
+                "kind"       : 10063,
+                "tags"       : [],
+                "pubkey"     : nostr_pubKey,
+            }
+            var signedEvent = await getSignedEvent( event, nostr_privKey );
+            console.log( "leaving pool:", signedEvent );
+            socket.send( JSON.stringify( [ "EVENT", signedEvent ] ) );
+        }
         function start() {
             $( '.start' ).style.display = "none";
             $( '.settings_page' ).style.display = "none";
@@ -1984,7 +2047,7 @@
             sessionStorage[ "bitcoin_price" ] = bitcoin_price;
             checkHeartbeat();
             if ( num == 29 ) {
-                if ( window.location.href.includes( "pool=true" ) ) {
+                if ( sessionStorage[ "pool" ] ) {
                     swimInPool();
                     //also refreshing utxo list and history in case I was in a coinjoin and my utxos changed
                     localStorage.removeItem( "utxos" );
