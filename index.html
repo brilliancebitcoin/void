@@ -1852,10 +1852,7 @@
                 }
             } else {
                 //not checking balance because initialized
-                //the last item in the following if block is meant to fix the following situation:
-                //My phone once switched from a numeric balance to the "Syncing..." message.
-                //So, if the balance-changer field contains the word "dollars", this prevents the syncing message from displaying.
-                if ( $( '.balance' ) && $( '.balance' ).innerText != "" && !$( '.balance-changer' ).innerText.includes( "dollars" ) ) {
+                if ( $( '.balance' ) && $( '.balance' ).innerText != "" ) {
                     var balance = Number( $( '.balance' ).innerText );
                 } else {
                     var balance = "still loading...";
@@ -1871,7 +1868,12 @@
                     nominator = Number( $( '.syncnom' ).innerText );
                     denominator = Number( $( '.syncdenom' ).innerText );
                 }
-                $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/<span class="syncdenom">${denominator}</span></span></span>`;
+                //the next check is meant to fix the following situation:
+                //My phone once switched from a numeric balance to the "Syncing..." message.
+                //So, if the balance-changer field contains the word "dollars", this prevents the syncing message from displaying.
+                if ( !$( '.balance-changer' ).innerText.includes( "dollars" ) ) {
+                    $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/<span class="syncdenom">${denominator}</span></span></span>`;
+                }
             }
             if ( num == 27 ) {
                 var history = await getHistory();
@@ -1932,6 +1934,6 @@
             num = num + 1;
             setTimeout( function() {startLoop( num );}, 10000 );
         }
-        startLoop( 26 );
+        startLoop( 27 );
     </script>
 </html>
