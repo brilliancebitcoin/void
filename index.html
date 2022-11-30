@@ -1667,12 +1667,6 @@
         if ( !localStorage[ "index-of-first-known-unused-change-address" ] ) {
             localStorage[ "index-of-first-known-unused-change-address" ] = 0;
         }
-        //the following line forces the wallet to get its first unused change address
-        //so that the syncing denominator gets properly updated
-        //otherwise I might leave out some utxos I own when I run displayBalance()
-        //because I might have utxos in change addresses that are not checked
-        //because the denominator is too low
-        var first_change_address = await getFirstUnusedChangeAddress();
         let qrCode = window.qrcode;
         let scanIcon = $( '.scan-btn' );
         var video = document.createElement("video");
@@ -1839,6 +1833,12 @@
         $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
         async function syncBalance( num ) {
             if ( !sessionStorage[ "initialized" ] ) {
+                //the following line forces the wallet to get its first unused change address
+                //so that the syncing denominator gets properly updated
+                //otherwise I might leave out some utxos I own when I run displayBalance()
+                //because I might have utxos in change addresses that are not checked
+                //because the denominator is too low
+                var first_change_address = await getFirstUnusedChangeAddress();
                 if ( num == 27 ) {
                     var balance = await displayQuickBalance();
                     balance = Number( balance );
