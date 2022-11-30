@@ -257,7 +257,6 @@
                     var available_utxos = [];
                     var i1 = 0;
                     var i2 = 0;
-                    console.log( "starting index plus 20:", starting_index + 20 );
                     var i; for ( i=0; i<100000; i++ ) {
                         if ( i2 > starting_index + 20 ) {
                                 break;
@@ -293,7 +292,6 @@
                     var available_utxos = [];
                     var i1 = 0;
                     var i2 = 0;
-                    console.log( "starting index plus 20:", starting_index + 20 );
                     var i; for ( i=0; i<100000; i++ ) {
                         if ( i2 > starting_change_index + 20 ) {
                             break;
@@ -1669,6 +1667,12 @@
         if ( !localStorage[ "index-of-first-known-unused-change-address" ] ) {
             localStorage[ "index-of-first-known-unused-change-address" ] = 0;
         }
+        //the following line forces the wallet to get its first unused change address
+        //so that the syncing denominator gets properly updated
+        //otherwise I might leave out some utxos I own when I run displayBalance()
+        //because I might have utxos in change addresses that are not checked
+        //because the denominator is too low
+        var first_change_address = await getFirstUnusedChangeAddress();
         let qrCode = window.qrcode;
         let scanIcon = $( '.scan-btn' );
         var video = document.createElement("video");
