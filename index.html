@@ -1065,6 +1065,10 @@
                 }
             }
             async function prepCoinjoin( toamount, toaddress ) {
+                if ( Object.keys( pool ).length < 2 ) {
+                    alert( "Sorry, there were not enough people in the pool to do a coinjoin with. Try again later" );
+                    return;
+                }
                 if ( !isValidAddress( toaddress ) ) {
                     alert( "You entered an invalid address" );
                     return;
