@@ -252,12 +252,12 @@
 
             async function getAvailableUtxosFromReceivePath() {
                 return new Promise( async function( resolve, reject ) {
-                    var starting_index = Number( localStorage[ "index-of-first-known-unused-receive-address" ] );
-                    var starting_change_index = Number( localStorage[ "index-of-first-known-unused-change-address" ] );
                     var available_utxos = [];
                     var i1 = 0;
                     var i2 = 0;
                     var i; for ( i=0; i<100000; i++ ) {
+                        var starting_index = Number( localStorage[ "index-of-first-known-unused-receive-address" ] );
+                        var starting_change_index = Number( localStorage[ "index-of-first-known-unused-change-address" ] );
                         if ( i2 > starting_index + 20 ) {
                                 break;
                         }
@@ -287,12 +287,12 @@
 
             async function getAvailableUtxosFromChangePath() {
                 return new Promise( async function( resolve, reject ) {
-                    var starting_index = Number( localStorage[ "index-of-first-known-unused-receive-address" ] );
-                    var starting_change_index = Number( localStorage[ "index-of-first-known-unused-change-address" ] );
                     var available_utxos = [];
                     var i1 = 0;
                     var i2 = 0;
                     var i; for ( i=0; i<100000; i++ ) {
+                        var starting_index = Number( localStorage[ "index-of-first-known-unused-receive-address" ] );
+                        var starting_change_index = Number( localStorage[ "index-of-first-known-unused-change-address" ] );
                         if ( i2 > starting_change_index + 20 ) {
                             break;
                         }
@@ -325,6 +325,9 @@
             }
 
             async function checkAddresses() {
+                //the following two lines force the syncing denominator to properly update lest I overlook some utxos
+                getFirstUnusedAddress();
+                getFirstUnusedChangeAddress();
                 var available_utxos_1 = await getAvailableUtxosFromReceivePath();
                 var available_utxos_2 = await getAvailableUtxosFromChangePath();
                 available_utxos_2.forEach( function( item ) {
@@ -368,7 +371,6 @@
             async function getFirstUnusedChangeAddress() {
                 var starting_index = Number( localStorage[ "index-of-first-known-unused-change-address" ] );
                 var i; for ( i=starting_index; i<100000; i++ ) {
-                    console.log( i );
                     var backupwords = localStorage[ "backup_words" ];
                     var path = "84'/0'/1'";
                     var privkey = getPrivkeyHexFromPath( backupwords, path, i );
@@ -1785,7 +1787,7 @@
             $( '.send' ).style.display = "flex";
         }
         $( '.balance-changer' ).onclick = function() {changeDenomination( $( '.balance' ).innerText );}
-        $( '.import-privkeys' ).onclick = function() {
+        $( '.import-privkeys' ).onclick = async function() {
             var new_words = $( '.import-input' ).value.toLowerCase();
             if ( !backupWordsAreValid( new_words ) ) {
                 alert( "Those backup words are invalid, please try again" );
@@ -1798,8 +1800,14 @@
             $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span>`;
             $( '.address-qr' ).innerHTML = `<img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;">`;
             $( '.address' ).innerText = "";
+            //the following lines reset the syncing info and resync the wallet
             localStorage[ "index-of-first-known-unused-receive-address" ] = 0;
             localStorage[ "index-of-first-known-unused-change-address" ] = 0;
+            var nominator = 0;
+            var denominator = 40;
+            $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/<span class="syncdenom">${denominator}</span></span></span>`;
+            var balance = await displayBalance();
+            $( '.balance-changer' ).innerHTML = `<span class="balance">${balance}</span><br>sats`;
         }
         $$( '.home-btn' ).forEach( function( btn ) {
             btn.onclick = function() {
@@ -1833,12 +1841,6 @@
         $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
         async function syncBalance( num ) {
             if ( !sessionStorage[ "initialized" ] ) {
-                //the following line forces the wallet to get its first unused change address
-                //so that the syncing denominator gets properly updated
-                //otherwise I might leave out some utxos I own when I run displayBalance()
-                //because I might have utxos in change addresses that are not checked
-                //because the denominator is too low
-                var first_change_address = await getFirstUnusedChangeAddress();
                 if ( num == 27 ) {
                     var balance = await displayQuickBalance();
                     balance = Number( balance );
@@ -1930,6 +1932,6 @@
             num = num + 1;
             setTimeout( function() {startLoop( num );}, 10000 );
         }
-        startLoop( 27 );
+        startLoop( 26 );
     </script>
 </html>
