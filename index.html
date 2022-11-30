@@ -1804,6 +1804,9 @@
             localStorage.removeItem( "utxos" );
             localStorage.removeItem( "alt_utxo_list" );
             localStorage.removeItem( "history" );
+            sessionStorage.removeItem( "first-unused-address" );
+            sessionStorage.removeItem( "initialized" );
+            sessionStorage.removeItem( "syncing-change" );
             $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span>`;
             $( '.address-qr' ).innerHTML = `<img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;">`;
             $( '.address' ).innerText = "";
