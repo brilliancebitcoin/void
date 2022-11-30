@@ -252,12 +252,14 @@
 
             async function getAvailableUtxosFromReceivePath() {
                 return new Promise( async function( resolve, reject ) {
+                    var starting_index = Number( localStorage[ "index-of-first-known-unused-receive-address" ] );
+                    var starting_change_index = Number( localStorage[ "index-of-first-known-unused-change-address" ] );
                     var available_utxos = [];
-                    //todo: fix the following situation. i1 counts addresses with utxos and i2 counts addresses with no utxos. When i2 hits 20 the counting stops and the wallet assumes no more addresses will have utxos. I am not sure why it does that. It should probably have a third counter that starts counting when an address never had money and proceeds til 20 of those go by (or resets to 0 if an address did have money), then stop counting uxtos after that
                     var i1 = 0;
                     var i2 = 0;
+                    console.log( "starting index plus 20:", starting_index + 20 );
                     var i; for ( i=0; i<100000; i++ ) {
-                        if ( i2 > 20 ) {
+                        if ( i2 > starting_index + 20 ) {
                                 break;
                         }
                         var backupwords = localStorage[ "backup_words" ];
@@ -270,13 +272,13 @@
                                 var old_nominator = Number( $( '.syncnom' ).innerText );
                                 if ( i2 > old_nominator ) {
                                     $( '.syncnom' ).innerText = i2;
+                                    $( '.syncdenom' ).innerText = 40 + starting_index + starting_change_index;
                                 }
                             }
                             i2 = Number( i2 ) + 1;
                         } else {
                             i1 = Number( i1 ) + 1;
                             var utxos_in_this_address = await getUTXOs( privkey );
-                            console.log( "gotem!" );
                             available_utxos.push( utxos_in_this_address );
                         }
                     }
@@ -286,12 +288,14 @@
 
             async function getAvailableUtxosFromChangePath() {
                 return new Promise( async function( resolve, reject ) {
+                    var starting_index = Number( localStorage[ "index-of-first-known-unused-receive-address" ] );
+                    var starting_change_index = Number( localStorage[ "index-of-first-known-unused-change-address" ] );
                     var available_utxos = [];
-                    //todo: fix the following situation. i1 counts addresses with utxos and i2 counts addresses with no utxos. When i2 hits 20 the counting stops and the wallet assumes no more addresses will have utxos. I am not sure why it does that. It should probably have a third counter that starts counting when an address never had money and proceeds til 20 of those go by (or resets to 0 if an address did have money), then stop counting uxtos after that
                     var i1 = 0;
                     var i2 = 0;
+                    console.log( "starting index plus 20:", starting_index + 20 );
                     var i; for ( i=0; i<100000; i++ ) {
-                        if ( i2 > 20 ) {
+                        if ( i2 > starting_change_index + 20 ) {
                             break;
                         }
                         var backupwords = localStorage[ "backup_words" ];
@@ -303,8 +307,9 @@
                             if ( $( '.syncnom' ) ) {
                                 sessionStorage[ "syncing-change" ] = true;
                                 var old_nominator = Number( $( '.syncnom' ).innerText );
-                                if ( i2 + 21 > old_nominator ) {
-                                    $( '.syncnom' ).innerText = i2 + 21;
+                                if ( i2 + starting_index + 21 > old_nominator ) {
+                                    $( '.syncnom' ).innerText = i2 + starting_index + 21;
+                                    $( '.syncdenom' ).innerText = 40 + starting_index + starting_change_index;
                                 }
                             }
                             i2 = Number( i2 ) + 1;
@@ -348,33 +353,39 @@
             }
 
             async function getFirstUnusedAddress() {
-                var i; for ( i=0; i<100000; i++ ) {
+                var starting_index = Number( localStorage[ "index-of-first-known-unused-receive-address" ] );
+                var i; for ( i=starting_index; i<100000; i++ ) {
                     var backupwords = localStorage[ "backup_words" ];
                     var path = "84'/0'/0'";
                     var privkey = getPrivkeyHexFromPath( backupwords, path, i );
                     var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
                     var hadMoney = await didThisAddressEverHaveMoney( address );
                     if ( !hadMoney ) {
+                        localStorage[ "index-of-first-known-unused-receive-address" ] = i;
                         return address;
                     }
                 }
             }
 
             async function getFirstUnusedChangeAddress() {
-                var i; for ( i=0; i<100000; i++ ) {
+                var starting_index = Number( localStorage[ "index-of-first-known-unused-change-address" ] );
+                var i; for ( i=starting_index; i<100000; i++ ) {
+                    console.log( i );
                     var backupwords = localStorage[ "backup_words" ];
                     var path = "84'/0'/1'";
                     var privkey = getPrivkeyHexFromPath( backupwords, path, i );
                     var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
                     var hadMoney = await didThisAddressEverHaveMoney( address );
                     if ( !hadMoney ) {
+                        localStorage[ "index-of-first-known-unused-change-address" ] = i;
                         return address;
                     }
                 }
             }
 
             async function getSecondUnusedChangeAddress() {
-                var i; for ( i=0; i<100000; i++ ) {
+                var starting_index = Number( localStorage[ "index-of-first-known-unused-change-address" ] );
+                var i; for ( i=starting_index; i<100000; i++ ) {
                     var backupwords = localStorage[ "backup_words" ];
                     var path = "84'/0'/1'";
                     var privkey = getPrivkeyHexFromPath( backupwords, path, i );
@@ -1548,7 +1559,7 @@
         <div class="home">
             <div class="settings">⚙️</div>
             <div class="row">
-                <h1 class="balance-changer sats"><span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/40</span></h1>
+                <h1 class="balance-changer sats"><span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span></h1>
             </div>
             <div class="flex-row">
                 <button class="send-btn">Send</button>
@@ -1652,6 +1663,12 @@
         var $ = document.querySelector.bind( document );
         var $$ = document.querySelectorAll.bind( document );
         sessionStorage.removeItem( "initialized" );
+        if ( !localStorage[ "index-of-first-known-unused-receive-address" ] ) {
+            localStorage[ "index-of-first-known-unused-receive-address" ] = 0;
+        }
+        if ( !localStorage[ "index-of-first-known-unused-change-address" ] ) {
+            localStorage[ "index-of-first-known-unused-change-address" ] = 0;
+        }
         let qrCode = window.qrcode;
         let scanIcon = $( '.scan-btn' );
         var video = document.createElement("video");
@@ -1780,9 +1797,11 @@
             $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
             $( '.import-input' ).value = "";
             sessionStorage.clear();
-            $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/40</span></span>`
-            $( '.address-qr' ).innerHTML = `<img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;">`
+            $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span>`;
+            $( '.address-qr' ).innerHTML = `<img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;">`;
             $( '.address' ).innerText = "";
+            localStorage[ "index-of-first-known-unused-receive-address" ] = 0;
+            localStorage[ "index-of-first-known-unused-change-address" ] = 0;
         }
         $$( '.home-btn' ).forEach( function( btn ) {
             btn.onclick = function() {
@@ -1841,10 +1860,12 @@
             } else {
                 //still loading...
                 var nominator = 0;
+                var denominator = 40;
                 if ( $( '.syncnom' ) ) {
                     nominator = Number( $( '.syncnom' ).innerText );
+                    denominator = Number( $( '.syncdenom' ).innerText );
                 }
-                $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/40</span></span>`;
+                $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/<span class="syncdenom">${denominator}</span></span></span>`;
             }
             if ( num == 27 ) {
                 var history = await getHistory();
