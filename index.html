@@ -104,7 +104,7 @@
                     var input_hash = input[ "hash" ].toString( "hex" );
                     input_hash = input_hash.match( /[a-fA-F0-9]{2}/g ).reverse().join( '' );
                     var my_utxos = [];
-                    JSON.parse( sessionStorage.utxos ).forEach( function( address ) {
+                    JSON.parse( localStorage[ "utxos" ] ).forEach( function( address ) {
                         address[ "utxos" ].forEach( function( utxo ) {
                             my_utxos.push( [ utxo[ "tx_id" ], utxo[ "output_number" ], utxo[ "privkey" ] ] );
                         });
@@ -124,7 +124,7 @@
                     var input_hash = input[ "hash" ].toString( "hex" );
                     input_hash = input_hash.match( /[a-fA-F0-9]{2}/g ).reverse().join( '' );
                     var my_utxos = [];
-                    JSON.parse( sessionStorage.utxos ).forEach( function( address ) {
+                    JSON.parse( localStorage[ "utxos" ] ).forEach( function( address ) {
                         address[ "utxos" ].forEach( function( utxo ) {
                             my_utxos.push( [ utxo[ "tx_id" ], utxo[ "output_number" ], utxo[ "privkey" ], utxo[ "amount" ] ] );
                         });
@@ -1234,6 +1234,9 @@
                 localStorage.removeItem( "utxos" );
                 localStorage.removeItem( "alt_utxo_list" );
                 localStorage.removeItem( "history" );
+                sessionStorage.removeItem( "first-unused-address" );
+                sessionStorage.removeItem( "initialized" );
+                sessionStorage.removeItem( "syncing-change" );
                 start();
             }
             function waitSomeSeconds( num ) {
