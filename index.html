@@ -333,7 +333,7 @@
                 available_utxos_2.forEach( function( item ) {
                     available_utxos_1.push( item );
                 });
-                sessionStorage[ "utxos" ] = JSON.stringify( available_utxos_1 );
+                localStorage[ "utxos" ] = JSON.stringify( available_utxos_1 );
             }
 
             function didThisAddressEverHaveMoney( address ) {
@@ -454,7 +454,7 @@
 
             async function displayBalance() {
                 await checkAddresses();
-                var utxos = JSON.parse( sessionStorage[ "utxos" ] );
+                var utxos = JSON.parse( localStorage[ "utxos" ] );
                 var balance = 0;
                 alt_utxo_list = [];
                 utxos.forEach( function( item ) {
@@ -463,14 +463,14 @@
                         alt_utxo_list.push( item[ "utxos" ][ i ] );
                     }
                 });
-                sessionStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
+                localStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
                 return Number( balance ).toString();
             }
 
             async function displayQuickBalance() {
                 var balance = 0;
-                if ( sessionStorage[ "utxos" ] ) {
-                    var utxos = JSON.parse( sessionStorage[ "utxos" ] );
+                if ( localStorage[ "utxos" ] ) {
+                    var utxos = JSON.parse( localStorage[ "utxos" ] );
                 } else {
                     balance = await displayBalance();
                     return balance;
@@ -482,7 +482,7 @@
                         alt_utxo_list.push( item[ "utxos" ][ i ] );
                     }
                 });
-                sessionStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
+                localStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
                 return Number( balance ).toString();
             }
 
@@ -870,7 +870,7 @@
                     console.log( "message from " + sender_pubkey + ": " + message[ "content" ] );
                     //contribute one or more inputs and send their info to the coinjoin starter
                     var sats_per_byte = Number( JSON.parse( message[ "content" ] )[ "sats_per_byte" ] );
-                    var utxos_available_for_this_transaction = JSON.parse( sessionStorage[ "alt_utxo_list" ] );
+                    var utxos_available_for_this_transaction = JSON.parse( localStorage[ "alt_utxo_list" ] );
                     var utxos_in_this_transaction = [];
                     var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
                     var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
@@ -1130,7 +1130,7 @@
                 });
                 console.log( coinjoin_inputs );
                 console.log( coinjoin_outputs );
-                var utxos_available_for_this_transaction = JSON.parse( sessionStorage[ "alt_utxo_list" ] );
+                var utxos_available_for_this_transaction = JSON.parse( localStorage[ "alt_utxo_list" ] );
                 var utxos_in_this_transaction = [];
                 var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
                 var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
@@ -1231,7 +1231,9 @@
                 var new_balance = old_balance - toamount;
                 new_balance = new_balance - final_psbt.getFee();
                 $( '.balance' ).innerText = String( new_balance );
-                sessionStorage.clear();
+                localStorage.removeItem( "utxos" );
+                localStorage.removeItem( "alt_utxo_list" );
+                localStorage.removeItem( "history" );
                 start();
             }
             function waitSomeSeconds( num ) {
@@ -1763,9 +1765,9 @@
             $( 'body' ).style.height = "auto";
             $( '.home' ).style.display = "none";
             $( '.history' ).style.display = "flex";
-            if ( sessionStorage[ "history" ] ) {
+            if ( localStorage[ "history" ] ) {
                 $( '.history-table' ).innerHTML = "";
-                var history = JSON.parse( sessionStorage[ "history" ] );
+                var history = JSON.parse( localStorage[ "history" ] );
                 history.forEach( function( item ) {
                     if ( item[ 0 ] == "in" ) {
                         $( '.history-table' ).innerHTML += `<p><span style="color: green">&searr;</span> <span title="${item[ 2 ]}">${item[ 1 ]}</span> sats to <span title="${item[ 3 ]}">${item[ 3 ].substring( 0, 7 )}...${item[ 3 ].substring( item[ 3 ].length - 4 )}</span></p>`;
@@ -1796,7 +1798,9 @@
             localStorage[ "backup_words" ] = new_words;
             $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
             $( '.import-input' ).value = "";
-            sessionStorage.clear();
+            localStorage.removeItem( "utxos" );
+            localStorage.removeItem( "alt_utxo_list" );
+            localStorage.removeItem( "history" );
             $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span>`;
             $( '.address-qr' ).innerHTML = `<img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;">`;
             $( '.address' ).innerText = "";
@@ -1877,7 +1881,7 @@
             }
             if ( num == 27 ) {
                 var history = await getHistory();
-                sessionStorage[ "history" ] = JSON.stringify( history );
+                localStorage[ "history" ] = JSON.stringify( history );
             }
         }
         async function syncAddress() {
