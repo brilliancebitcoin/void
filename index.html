@@ -1854,8 +1854,8 @@
                 //not checking balance because initialized
                 //the last item in the following if block is meant to fix the following situation:
                 //My phone once switched from a numeric balance to the "Syncing..." message.
-                //So, if the balance can be parsed as a number, this prevents the syncing message from displaying.
-                if ( $( '.balance' ) && $( '.balance' ).innerText != "" && !isNaN( parseInt( $( '.balance' ).innerText ) ) ) {
+                //So, if the balance-changer field contains the word "dollars", this prevents the syncing message from displaying.
+                if ( $( '.balance' ) && $( '.balance' ).innerText != "" && !$( '.balance-changer' ).innerText.includes( "dollars" ) ) {
                     var balance = Number( $( '.balance' ).innerText );
                 } else {
                     var balance = "still loading...";
