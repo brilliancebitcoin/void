@@ -493,6 +493,8 @@
                         if ( this.readyState == 4 && ( this.status > 199 && this.status < 300 ) ) {
                             var response = this.responseText;
                             resolve( response );
+                        } else if ( this.readyState == 4 ) {
+                            alert( "Error! Your transaction could not be processed, please try again" );
                         }
                     };
                     xhttp.open( "POST", "https://mempool.space/testnet/api/tx", true );
@@ -958,6 +960,9 @@
                         var sigs_info = [];
                     } else {
                         var sigs_info = JSON.parse( sessionStorage[ "sigs_info" ] );
+                        if ( sigs_info.includes( message[ "content" ] ) ) {
+                            return;
+                        }
                         console.log( "sigs_info:", sigs_info );
                         var known_sigs = [];
                         sigs_info.forEach( function( psbthex ) {
@@ -1234,10 +1239,13 @@
                 localStorage.removeItem( "utxos" );
                 localStorage.removeItem( "alt_utxo_list" );
                 localStorage.removeItem( "history" );
+                displayBalance();
                 sessionStorage.removeItem( "first-unused-address" );
                 sessionStorage.removeItem( "initialized" );
                 sessionStorage.removeItem( "syncing-change" );
                 start();
+                var history = await getHistory();
+                localStorage[ "history" ] = JSON.stringify( history );
             }
             function waitSomeSeconds( num ) {
                 var num = num.toString() + "000";
@@ -1791,7 +1799,11 @@
             $( '.home' ).style.display = "none";
             $( '.send' ).style.display = "flex";
         }
-        $( '.balance-changer' ).onclick = function() {changeDenomination( $( '.balance' ).innerText );}
+        $( '.balance-changer' ).onclick = function() {
+            if ( $( '.balance' ) ) {
+                changeDenomination( $( '.balance' ).innerText );
+            }
+        }
         $( '.import-privkeys' ).onclick = async function() {
             var new_words = $( '.import-input' ).value.toLowerCase();
             if ( !backupWordsAreValid( new_words ) ) {
@@ -1823,7 +1835,7 @@
             btn.onclick = function() {
                 start();
             }
-        })
+        });
         function start() {
             $( '.start' ).style.display = "none";
             $( '.settings_page' ).style.display = "none";
@@ -1900,6 +1912,15 @@
                     sessionStorage.removeItem( "initialized" );
                     var firstUnusedAddress = await getFirstUnusedAddress();
                     sessionStorage[ "first-unused-address" ] = firstUnusedAddress;
+                    //also refreshing utxo list and history
+                    localStorage.removeItem( "utxos" );
+                    localStorage.removeItem( "alt_utxo_list" );
+                    localStorage.removeItem( "history" );
+                    displayBalance();
+                    sessionStorage.removeItem( "initialized" );
+                    sessionStorage.removeItem( "syncing-change" );
+                    var history = await getHistory();
+                    localStorage[ "history" ] = JSON.stringify( history );
                 } else {
                     //I don't need to refresh my first unused address because the one I currently know about hasn't received money yet
                     var firstUnusedAddress = sessionStorage[ "first-unused-address" ];
@@ -1938,6 +1959,15 @@
             if ( num == 29 ) {
                 if ( window.location.href.includes( "pool=true" ) ) {
                     swimInPool();
+                    //also refreshing utxo list and history in case I was in a coinjoin and my utxos changed
+                    localStorage.removeItem( "utxos" );
+                    localStorage.removeItem( "alt_utxo_list" );
+                    localStorage.removeItem( "history" );
+                    displayBalance();
+                    sessionStorage.removeItem( "initialized" );
+                    sessionStorage.removeItem( "syncing-change" );
+                    var history = await getHistory();
+                    localStorage[ "history" ] = JSON.stringify( history );
                 }
                 num = -1;
             }
