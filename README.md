@@ -1,6 +1,14 @@
 # Void wallet
 A work-in-progress bitcoin wallet that only sends and receives coinjoins
 
+# Video demo
+
+[![](https://brilliancebitcoin.github.io/void/void-wallet-with-youtube-logo.png)](https://www.youtube.com/watch?v=Oi4qEKtkabE)
+
+# How to try
+
+Click here: https://brilliancebitcoin.github.io/void/
+
 # What is this?
 
 This is a bitcoin wallet designed around the idea of making every spend a coinjoin. I want it to do a coinjoin whenever you send money and I want it to only accept money from wallets who sent the money inside a coinjoin.
