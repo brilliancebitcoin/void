@@ -256,6 +256,9 @@
                     var i1 = 0;
                     var i2 = 0;
                     var i; for ( i=0; i<100000; i++ ) {
+                        if ( sessionStorage[ "stop-balance-sync" ] ) {
+                            return;
+                        }
                         var starting_index = Number( localStorage[ "index-of-first-known-unused-receive-address" ] );
                         var starting_change_index = Number( localStorage[ "index-of-first-known-unused-change-address" ] );
                         if ( i2 > starting_index + 20 ) {
@@ -286,6 +289,9 @@
             }
 
             async function getAvailableUtxosFromChangePath() {
+                if ( sessionStorage[ "stop-balance-sync" ] ) {
+                    return;
+                }
                 return new Promise( async function( resolve, reject ) {
                     var available_utxos = [];
                     var i1 = 0;
@@ -1757,6 +1763,7 @@
         var $$ = document.querySelectorAll.bind( document );
         sessionStorage.removeItem( "pool" );
         sessionStorage.removeItem( "initialized" );
+        sessionStorage.removeItem( "stop-balance-sync" );
         if ( !localStorage[ "index-of-first-known-unused-receive-address" ] ) {
             localStorage[ "index-of-first-known-unused-receive-address" ] = 0;
         }
@@ -1857,7 +1864,7 @@
             $( 'body' ).style.height = "auto";
             $( '.home' ).style.display = "none";
             $( '.history' ).style.display = "flex";
-            if ( localStorage[ "history" ] ) {
+            if ( localStorage[ "history" ] && JSON.parse( localStorage[ "history" ] ).length > 0 ) {
                 $( '.history-table' ).innerHTML = "";
                 var history = JSON.parse( localStorage[ "history" ] );
                 history.forEach( function( item ) {
@@ -1894,6 +1901,10 @@
             localStorage[ "backup_words" ] = new_words;
             $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
             $( '.import-input' ).value = "";
+            //return here
+            sessionStorage[ "stop-balance-sync" ] = true;
+            var timeout = await waitSomeSeconds( 2 );
+            sessionStorage.removeItem( "stop-balance-sync" );
             localStorage.removeItem( "utxos" );
             localStorage.removeItem( "alt_utxo_list" );
             localStorage.removeItem( "history" );
@@ -1901,7 +1912,6 @@
             sessionStorage.removeItem( "initialized" );
             sessionStorage.removeItem( "syncing-change" );
             sessionStorage.removeItem( "pool" );
-            $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span>`;
             $( '.address-qr' ).innerHTML = `<img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;">`;
             $( '.address' ).innerText = "";
             //the following lines reset the syncing info and resync the wallet
@@ -1910,6 +1920,7 @@
             var nominator = 0;
             var denominator = 40;
             $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/<span class="syncdenom">${denominator}</span></span></span>`;
+            setTimeout( function() {$( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/<span class="syncdenom">${denominator}</span></span></span>`;}, 2050 );
             var balance = await displayBalance();
             $( '.balance-changer' ).innerHTML = `<span class="balance">${balance}</span><br>sats`;
         }
@@ -1987,7 +1998,7 @@
                 if ( !conf ) return;
                 resync();
             };
-            if (!timer) {
+            if ( !timer || ( !isNaN( timer ) && timer != null ) ) {
                 timer = setTimeout( onlongtouch, touchduration );
             }
         }
