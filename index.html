@@ -1901,8 +1901,13 @@
             localStorage[ "backup_words" ] = new_words;
             $( '.backup_words' ).innerText = localStorage[ "backup_words" ];
             $( '.import-input' ).value = "";
-            //return here
             sessionStorage[ "stop-balance-sync" ] = true;
+            localStorage[ "index-of-first-known-unused-receive-address" ] = 0;
+            localStorage[ "index-of-first-known-unused-change-address" ] = 0;
+            var nominator = 0;
+            var denominator = 40;
+            $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/<span class="syncdenom">${denominator}</span></span></span>`;
+            setTimeout( function() {$( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/<span class="syncdenom">${denominator}</span></span></span>`;}, 2050 );
             var timeout = await waitSomeSeconds( 2 );
             sessionStorage.removeItem( "stop-balance-sync" );
             localStorage.removeItem( "utxos" );
@@ -1915,12 +1920,6 @@
             $( '.address-qr' ).innerHTML = `<img src="loading.gif" style="width: 100%; max-width: 25px; height: 25px;">`;
             $( '.address' ).innerText = "";
             //the following lines reset the syncing info and resync the wallet
-            localStorage[ "index-of-first-known-unused-receive-address" ] = 0;
-            localStorage[ "index-of-first-known-unused-change-address" ] = 0;
-            var nominator = 0;
-            var denominator = 40;
-            $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/<span class="syncdenom">${denominator}</span></span></span>`;
-            setTimeout( function() {$( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">${nominator}</span>/<span class="syncdenom">${denominator}</span></span></span>`;}, 2050 );
             var balance = await displayBalance();
             $( '.balance-changer' ).innerHTML = `<span class="balance">${balance}</span><br>sats`;
         }
@@ -2008,12 +2007,6 @@
         function resync() {
             $( '.import-input' ).value = $( '.backup_words' ).innerText;
             $( '.import-privkeys' ).click();
-            setTimeout( function() {
-                $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span>`;
-            }, 50 );
-            setTimeout( function() {
-                $( '.balance-changer' ).innerHTML = `<span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span>`;
-            }, 2050 );
         }
         async function syncBalance( num ) {
             if ( !sessionStorage[ "initialized" ] ) {
@@ -2057,25 +2050,38 @@
             }
         }
         async function syncAddress() {
-            if ( sessionStorage[ "first-unused-address" ] ) {
+            if ( !sessionStorage[ "first-unused-address" ] ) {
+                //refreshing my first unused address because I don't have one in sessionStorage yet
+                var firstUnusedAddress = await getFirstUnusedAddress();
+                sessionStorage[ "first-unused-address" ] = firstUnusedAddress;
+            } else {
                 //checking if the address I call my first unused address received any money
                 var hadMoney = await didThisAddressEverHaveMoney( sessionStorage[ "first-unused-address" ] );
-                if ( hadMoney ) {
-                    var balance_to_be_added = await getAddressBalance( sessionStorage[ "first-unused-address" ] );
-                    var old_balance = Number( $( '.balance' ).innerText );
-                    var new_balance = old_balance + balance_to_be_added;
-                    console.log( "old balance:", old_balance );
-                    console.log( "balance to be added:", balance_to_be_added );
-                    console.log( "new balance:", new_balance );
-                    $( '.balance' ).innerText = String( new_balance );
-                    var index_of_address_that_received_money = await getPreviousUnusedAddressIndexNumber();
-                    var backupwords = localStorage[ "backup_words" ];
-                    var path = "84'/0'/0'";
-                    var privkey = getPrivkeyHexFromPath( backupwords, path, index_of_address_that_received_money );
-                    var new_utxos = await getUTXOs( privkey );
-                    var old_utxos = JSON.parse( localStorage[ "utxos" ] );
-                    old_utxos.push( new_utxos );
-                    localStorage[ "utxos" ] = old_utxos;
+                if ( !hadMoney ) {
+                    //I don't need to refresh my first unused address because the one I currently know about hasn't received money yet
+                    var firstUnusedAddress = sessionStorage[ "first-unused-address" ];
+                } else {
+                    //if my balance indicator has a number in it (i.e. I'm not currently syncing) let's put my new balance in it
+                    if ( $( '.balance' ) ) {
+                        var balance_to_be_added = await getAddressBalance( sessionStorage[ "first-unused-address" ] );
+                        var old_balance = Number( $( '.balance' ).innerText );
+                        var new_balance = old_balance + balance_to_be_added;
+                        console.log( "old balance:", old_balance );
+                        console.log( "balance to be added:", balance_to_be_added );
+                        console.log( "new balance:", new_balance );
+                        $( '.balance' ).innerText = String( new_balance );
+                        var index_of_address_that_received_money = await getPreviousUnusedAddressIndexNumber();
+                        var backupwords = localStorage[ "backup_words" ];
+                        var path = "84'/0'/0'";
+                        var privkey = getPrivkeyHexFromPath( backupwords, path, index_of_address_that_received_money );
+                        var new_utxos = await getUTXOs( privkey );
+                        var old_utxos = JSON.parse( localStorage[ "utxos" ] );
+                        old_utxos.push( new_utxos );
+                        localStorage[ "utxos" ] = old_utxos;
+                    } else {
+                        //if my balance indicator does not have a number in it, it is syncing, which means it won't display my up to date balance because is syncing up to the point before the new money came in...so I should resync so that it *does* display the right balance
+                        resync();
+                    }
                     //refreshing my first unused address because my previous one received money
                     //also removing the initilized flag so that I recheck my balance
                     sessionStorage.removeItem( "initialized" );
@@ -2090,14 +2096,7 @@
                     sessionStorage.removeItem( "syncing-change" );
                     var history = await getHistory();
                     localStorage[ "history" ] = JSON.stringify( history );
-                } else {
-                    //I don't need to refresh my first unused address because the one I currently know about hasn't received money yet
-                    var firstUnusedAddress = sessionStorage[ "first-unused-address" ];
                 }
-            } else {
-                //refreshing my first unused address because I don't have one in sessionStorage yet
-                var firstUnusedAddress = await getFirstUnusedAddress();
-                sessionStorage[ "first-unused-address" ] = firstUnusedAddress;
             }
             if ( $( '.address' ).innerText != firstUnusedAddress ) {
                 $( '.address' ).innerText = firstUnusedAddress;
