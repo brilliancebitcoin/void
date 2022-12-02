@@ -368,6 +368,20 @@
                 }
             }
 
+            async function getPreviousUnusedAddressIndexNumber() {
+                var starting_index = Number( localStorage[ "index-of-first-known-unused-receive-address" ] );
+                var i; for ( i=starting_index; i<100000; i++ ) {
+                    var backupwords = localStorage[ "backup_words" ];
+                    var path = "84'/0'/0'";
+                    var privkey = getPrivkeyHexFromPath( backupwords, path, i );
+                    var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
+                    var hadMoney = await didThisAddressEverHaveMoney( address );
+                    if ( !hadMoney ) {
+                        return i - 1;
+                    }
+                }
+            }
+
             async function getFirstUnusedChangeAddress() {
                 var starting_index = Number( localStorage[ "index-of-first-known-unused-change-address" ] );
                 var i; for ( i=starting_index; i<100000; i++ ) {
@@ -495,6 +509,8 @@
                             resolve( response );
                         } else if ( this.readyState == 4 ) {
                             alert( "Error! Your transaction could not be processed, please try again" );
+                            $( "#progress" ).style.display = "none";
+                            $( "#progressBar" ).style.width = "0%";
                         }
                     };
                     xhttp.open( "POST", "https://mempool.space/testnet/api/tx", true );
@@ -563,6 +579,8 @@
                 console.log( "utxos in this transaction:", utxos_in_this_transaction );
                 if ( utxos_available_for_this_transaction.length < 1 ) {
                     alert( "You do not have enough money to send this transaction. Please top up your wallet or send a smaller amount." );
+                    $( "#progress" ).style.display = "none";
+                    $( "#progressBar" ).style.width = "0%";
                     return;
                 }
                 var largest_utxo_value = 0;
@@ -935,8 +953,8 @@
                         sessionStorage[ "info_about_the_participants" ] = JSON.stringify( info_about_the_participants );
                         console.log( `${sender_pubkey} joined your coinjoin!` );
                         //coinjoiner located...
-                        document.getElementById( "cj_status" ).innerText = "coinjoiner located...";
-                        document.getElementById( "progressBar" ).style.width = document.getElementById( "progressBar" ).style.width = Math.floor( document.getElementById( "progressBar" ).offsetWidth / document.getElementById( "progressBar" ).parentElement.offsetWidth * 100 ) + 3 + "%";
+                        $( "#cj_status" ).innerText = "coinjoiner located...";
+                        $( "#progressBar" ).style.width = $( "#progressBar" ).style.width = Math.floor( $( "#progressBar" ).offsetWidth / $( "#progressBar" ).parentElement.offsetWidth * 100 ) + 3 + "%";
                     }
                     console.log( message[ "content" ] );
                 }
@@ -996,8 +1014,8 @@
                                 }
                                 console.log( `${sender_pubkey} cosigned at least once (it is okay if the message appears two times and it is also okay if it only appears one time)!` );
                                 //signature added...
-                                document.getElementById( "cj_status" ).innerText = "signature added...";
-                                document.getElementById( "progressBar" ).style.width = document.getElementById( "progressBar" ).style.width = Math.floor( document.getElementById( "progressBar" ).offsetWidth / document.getElementById( "progressBar" ).parentElement.offsetWidth * 100 ) + 3 + "%";
+                                $( "#cj_status" ).innerText = "signature added...";
+                                $( "#progressBar" ).style.width = $( "#progressBar" ).style.width = Math.floor( $( "#progressBar" ).offsetWidth / $( "#progressBar" ).parentElement.offsetWidth * 100 ) + 3 + "%";
                             }
                         });
                     }
@@ -1065,15 +1083,15 @@
                 }
             }
             async function prepCoinjoin( toamount, toaddress ) {
-                if ( Object.keys( pool ).length < 2 ) {
-                    alert( "Sorry, there were not enough people in the pool to do a coinjoin with. Try again later" );
+                if ( toamount > Number( $( '.max' ).innerText ) ) {
+                    alert( "Sorry, there are not enough people in the pool to do a coinjoin with that amount. Try a lower amount or try again later." );
                     return;
                 }
                 if ( !isValidAddress( toaddress ) ) {
                     alert( "You entered an invalid address" );
                     return;
                 }
-                document.getElementById( "progress" ).style.display = "block";
+                $( "#progress" ).style.display = "block";
                 var other_participants = [];
                 Object.keys( pool ).forEach( function( amount ) {
                     if ( toamount <= amount && other_participants.length < 10 ) {
@@ -1086,9 +1104,9 @@
                 });
                 console.log( "other_participants:", other_participants );
                 //reaching out to other_participants.length other people...
-                document.getElementById( "cj_status" ).innerText = `reaching out to ${other_participants.length} other people...`;
-                document.getElementById( "progressBar" ).style.width = "10%";
-                var sats_per_byte = Number( document.getElementById( "sats_per_byte" ).innerText );
+                $( "#cj_status" ).innerText = `reaching out to ${other_participants.length} other people...`;
+                $( "#progressBar" ).style.width = "10%";
+                var sats_per_byte = Number( $( "#sats_per_byte" ).innerText );
                 sessionStorage[ "num_of_participants" ] = other_participants.length + 1;
                 var participant = {}
                 participant[ "amount" ] = toamount;
@@ -1109,8 +1127,8 @@
                 }
                 var roster_is_full = await isRosterFullYet();
                 //all coinjoiners located...
-                document.getElementById( "cj_status" ).innerText = `enough coinjoiners located...`;
-                document.getElementById( "progressBar" ).style.width = "50%";
+                $( "#cj_status" ).innerText = `enough coinjoiners located...`;
+                $( "#progressBar" ).style.width = "50%";
                 console.log( "roster is full, right?", roster_is_full );
                 var participants = JSON.parse( sessionStorage[ "info_about_the_participants" ] );
                 var coinjoin_inputs = [];
@@ -1120,23 +1138,33 @@
                         coinjoin_inputs.push( utxo );
                     });
                 });
+                var i_should_halt = false;
                 participants.forEach( function( participant ) {
                     if ( participant[ "change_amount" ] && Number( participant[ "change_amount" ] ) > 546 ) {
                         var sum_of_this_participants_utxos = 0;
                         participant[ "utxos" ].forEach( function( utxo ) {
                             sum_of_this_participants_utxos = sum_of_this_participants_utxos + utxo[ "amount" ];
                         });
-                        var real_change = sum_of_this_participants_utxos - toamount;
-                        if ( real_change != Number( participant[ "change_amount" ] ) ) {
-                            alert( `Scammer! True change due: ${real_change} Desired change due: ${Number( participant[ "change_amount" ] )}` );
+                        var real_change_due = sum_of_this_participants_utxos - toamount;
+                        if ( Number( participant[ "change_amount" ] ) != real_change_due ) {
+                            alert( `Scammer! True change due: ${real_change_due} Desired change due: ${Number( participant[ "change_amount" ] )}` );
+                            i_should_halt = true;
                             return;
                         }
                     }
                     coinjoin_outputs.push( [ participant[ "destination_address" ], toamount ] );
                     if ( participant[ "change_address" ] && Number( participant[ "change_amount" ] ) ) {
-                        coinjoin_outputs.push( [ participant[ "change_address" ], real_change ] );
+                        coinjoin_outputs.push( [ participant[ "change_address" ], real_change_due ] );
                     }
                 });
+                if ( i_should_halt ) {
+                    $( "#progress" ).style.display = "none";
+                    $( "#progressBar" ).style.width = "0%";                    
+                    sessionStorage.removeItem( "num_of_participants" );
+                    sessionStorage.removeItem( "info_about_the_participants" );
+                    sessionStorage.removeItem( "sigs_info" );
+                    return;
+                }
                 console.log( coinjoin_inputs );
                 console.log( coinjoin_outputs );
                 var utxos_available_for_this_transaction = JSON.parse( localStorage[ "alt_utxo_list" ] );
@@ -1145,8 +1173,8 @@
                 var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
                 var amount_plus_fee = toamount + ( ( 125 * coinjoin_inputs.length + 1 ) + ( 50 * coinjoin_outputs.length + 1 ) ) * sats_per_byte;
                 //creating coinjoin transaction...
-                document.getElementById( "cj_status" ).innerText = `creating coinjoin transaction...`;
-                document.getElementById( "progressBar" ).style.width = "60%";
+                $( "#cj_status" ).innerText = `creating coinjoin transaction...`;
+                $( "#progressBar" ).style.width = "60%";
                 var array = addUtxosToTx( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, false, 0, toamount );
                 if ( !array ) return;
                 if ( array[ 0 ] && array[ 0 ].length > 0 && array[ 1 ] && array[ 2 ] && array[ 3 ] && array[ 4 ] && array[ 5 ] ) {
@@ -1189,8 +1217,8 @@
                 sessionStorage[ "sigs_info" ] = JSON.stringify( [signed_cj] );
                 console.log( "here is the coinjoin psbt:", cj_psbt );
                 //asking everyone to sign...
-                document.getElementById( "cj_status" ).innerText = `asking everyone to sign...`;
-                document.getElementById( "progressBar" ).style.width = "75%";
+                $( "#cj_status" ).innerText = `asking everyone to sign...`;
+                $( "#progressBar" ).style.width = "75%";
                 //todo: reestimate the transaction fee before sending the transaction out for signatures. I probably can't predict an exact fee since I don't know the sig lengths yet but if I do the estimate with an assumed max sig size of 74 bytes then I will be erring on the side of caution (but note that if there are 100 people and their sigs are on average 2 bytes shorter than my estimate then I am overpaying by 200 bytes multiplied by however many sats per byte I choose...which can result in quite a large surcharge, such as 6000 sats if I pay 30 sats per byte).
                 var message = {}
                 message[ "msg_type" ] = "sign_coinjoin";
@@ -1201,8 +1229,8 @@
                 }
                 var sigs_are_here = await didAllSignaturesArriveYet();
                 //everyone signed...
-                document.getElementById( "cj_status" ).innerText = `everyone signed...`;
-                document.getElementById( "progressBar" ).style.width = "95%";
+                $( "#cj_status" ).innerText = `everyone signed...`;
+                $( "#progressBar" ).style.width = "95%";
                 var timeout = await waitSomeSeconds( 2 );
                 console.log( "the sigs are all here, right?", sigs_are_here );
                 var signed_psbts = JSON.parse( sessionStorage[ "sigs_info" ] );
@@ -1225,15 +1253,14 @@
                 console.log( `the transaction is this size (in bytes): ${tx.virtualSize()}`);
                 console.log( `the transaction fee is: ${final_psbt.getFee()} sats`);
                 var sat_or_sats = ( final_psbt.getFeeRate() == 1 ) ? "sat":"sats";
-                //return here
                 var conf = confirm( `This transaction will send ${toamount} sats to ${toaddress} through a coinjoin with ${other_participants.length + 1} people. The mining fee will cost ${final_psbt.getFee()} sats, which gives you a fee rate close to ${final_psbt.getFeeRate()} ${ sat_or_sats} per byte. (Note that it is hard to get a coinjoin's feerate to precisely match what you want. This should be close.) If you are okay with that, please click okay, otherwise you can cancel the payment.` );
                 if ( !conf ) {
-                    document.getElementById( "progress" ).style.display = "none";
-                    document.getElementById( "progressBar" ).style.width = "0%";
+                    $( "#progress" ).style.display = "none";
+                    $( "#progressBar" ).style.width = "0%";
                     return;
                 }
-                document.getElementById( "progress" ).style.display = "none";
-                document.getElementById( "progressBar" ).style.width = "0%";
+                $( "#progress" ).style.display = "none";
+                $( "#progressBar" ).style.width = "0%";
                 var txid = await pushBTCpmt( final_psbt.extractTransaction().toHex() );
                 console.log( "Your transaction was broadcasted, your txid is: " + txid );
                 var old_balance = Number( $( '.balance' ).innerText );
@@ -1308,6 +1335,8 @@
                     } else if ( !isNaN( parseInt( content ) ) && !do_not_add ) {
                         pool[ content ].push( {"joiner": event.pubkey, "timestamp": event.created_at} );
                     }
+                    console.log( "max spendable amount:", getMaxSpend( pool ) );
+                    $( '.max' ).innerText = getMaxSpend( pool );
                     console.log( Math.floor( Date.now() / 1000 ), pool );
                 }
             }
@@ -1367,6 +1396,23 @@
                     array.push( amount );
                 }
                 return array;
+            }
+            function getMaxSpend( pool ) {
+                var max = 0;
+                var poolkeys = Object.keys( pool );
+                poolkeys.sort();
+                poolkeys.reverse();
+                if ( poolkeys[ 0 ] && pool[ poolkeys[ 0 ] ].length > 1 ) {
+                    max = poolkeys[ 0 ];
+                } else {
+                    if ( poolkeys[ 1 ] ) {
+                        max = poolkeys[ 1 ];
+                    }
+                }
+                if ( !isNaN( $( '.balance' ).innerText ) && Number( $( '.balance' ).innerText ) < max ) {
+                    max = Number( $( '.balance' ).innerText );
+                }
+                return max;
             }
         </script>
         <style>
@@ -1662,6 +1708,9 @@
                 </div>
                 <input type="number" step="1" name="send-amount-input" id="send-amount-input" placeholder="an amount in sats e.g. 503505" />
                 <p>
+                    Max spendable amount: <span class="max"></span> sats
+                </p>
+                <p>
                     <button class="scan-btn">Scan</button>
                 </p>
                 <div id="sliderange">
@@ -1717,7 +1766,7 @@
         let qrCode = window.qrcode;
         let scanIcon = $( '.scan-btn' );
         var video = document.createElement("video");
-        var canvasElement = document.getElementById("canvas");
+        var canvasElement = $("#canvas");
         var canvas = canvasElement.getContext("2d");
         var scanning = false;
         qrcode.callback = (res) => {
@@ -2001,6 +2050,21 @@
                 //checking if the address I call my first unused address received any money
                 var hadMoney = await didThisAddressEverHaveMoney( sessionStorage[ "first-unused-address" ] );
                 if ( hadMoney ) {
+                    var balance_to_be_added = await getAddressBalance( sessionStorage[ "first-unused-address" ] );
+                    var old_balance = Number( $( '.balance' ).innerText );
+                    var new_balance = old_balance + balance_to_be_added;
+                    console.log( "old balance:", old_balance );
+                    console.log( "balance to be added:", balance_to_be_added );
+                    console.log( "new balance:", new_balance );
+                    $( '.balance' ).innerText = String( new_balance );
+                    var index_of_address_that_received_money = await getPreviousUnusedAddressIndexNumber();
+                    var backupwords = localStorage[ "backup_words" ];
+                    var path = "84'/0'/0'";
+                    var privkey = getPrivkeyHexFromPath( backupwords, path, index_of_address_that_received_money );
+                    var new_utxos = await getUTXOs( privkey );
+                    var old_utxos = JSON.parse( localStorage[ "utxos" ] );
+                    old_utxos.push( new_utxos );
+                    localStorage[ "utxos" ] = old_utxos;
                     //refreshing my first unused address because my previous one received money
                     //also removing the initilized flag so that I recheck my balance
                     sessionStorage.removeItem( "initialized" );
@@ -2024,7 +2088,9 @@
                 var firstUnusedAddress = await getFirstUnusedAddress();
                 sessionStorage[ "first-unused-address" ] = firstUnusedAddress;
             }
-            $( '.address' ).innerText = firstUnusedAddress;
+            if ( $( '.address' ).innerText != firstUnusedAddress ) {
+                $( '.address' ).innerText = firstUnusedAddress;
+            }
             $( '.address-qr' ).innerText = "";
             $( '.address-qr' ).append( createQR( "bitcoin:" + firstUnusedAddress ) );
         }
@@ -2044,6 +2110,7 @@
         var filter  = { "#p": [ nostr_pubKey ] }
         socket.addEventListener('open', openConnection );
         var pool = {}
+        $( '.max' ).innerText = getMaxSpend( pool );
         async function startLoop( num ) {
             syncBalance( num );
             syncAddress();
