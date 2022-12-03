@@ -1828,8 +1828,9 @@
             // canvasElement.width = video.videoWidth;
             if ( window.innerWidth < 600 ) {
                 var xval = -( $( '.scan' ).offsetWidth - 70 );
-                canvas.rotate( 90 * Math.PI / 180 );
-                canvas.translate( -100, xval );
+                //canvas.rotate( 90 * Math.PI / 180 );
+                canvas.transform(1,0,0,1.5,0,0);
+                //canvas.translate( -100, xval );
             }
             canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
             scanning && requestAnimationFrame(tick);
