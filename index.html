@@ -185,7 +185,7 @@
 
             function txIsACoinjoin( tx ) {
                 if ( tx[ "vin" ].length < 3 || tx[ "vout" ].length < 3 ) return;
-                if ( tx[ "vin" ].length / tx[ "vout" ].length < 0.67 ) return;
+                if ( tx[ "vin" ].length / tx[ "vout" ].length < 0.5 ) return;
                 var output_values = [];
                 tx[ "vout" ].forEach( function( output ) {
                     if ( !( output.value in output_values ) ) {
@@ -217,7 +217,7 @@
                 return cj_value;
             }
 
-            async function getUTXOs( privkey ) {
+            async function getUTXOs( privkey, path ) {
                 var pubkey = getCompressedPubkeyHexFromPrivkeyHex( privkey );
                 var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
                 return new Promise( function( resolve, reject ) {
@@ -240,6 +240,18 @@
                                 utxo[ "amount" ] = item[ "value" ];
                                 utxo[ "privkey" ] = privkey;
                                 utxo[ "pubkey" ] = pubkey;
+                                utxo[ "toxic" ] = true;
+                                utxo[ "path" ] = path;
+                                if ( txIsACoinjoin( tx ) && item[ "value" ] == coinjoin_value ) {
+                                    utxo[ "toxic" ] = false;
+                                }
+                                //the following three lines make the wallet pretend all the utxos in my receive path are coinjoined
+                                //that way it can actually use the utxos I have when constructing coinjoins
+                                //todo: they should be removed once I let users coinjoin their toxic utxos via the planned coin control tab
+                                //I need it now because almost all of my received utxos are toxic and cannot be individually coinjoined yet
+                                if ( path == "receive" ) {
+                                    utxo[ "toxic" ] = false;
+                                }
                                 obj[ "utxos" ].push( utxo );
                             });
                             resolve( obj );
@@ -280,7 +292,7 @@
                             i2 = Number( i2 ) + 1;
                         } else {
                             i1 = Number( i1 ) + 1;
-                            var utxos_in_this_address = await getUTXOs( privkey );
+                            var utxos_in_this_address = await getUTXOs( privkey, "receive" );
                             available_utxos.push( utxos_in_this_address );
                         }
                     }
@@ -322,7 +334,7 @@
                             }
                         } else {
                             i1 = Number( i1 ) + 1;
-                            var utxos_in_this_address = await getUTXOs( privkey );
+                            var utxos_in_this_address = await getUTXOs( privkey, "change" );
                             available_utxos.push( utxos_in_this_address );
                         }
                     }
@@ -811,9 +823,20 @@
             }
 
             async function swimInPool() {
-                var balance = Number( $( '.balance' ).innerText );
+                var biggest_toxic_utxo_value = 0;
+                var sum_of_all_coinjoined_utxo_values = 0;
+                var utxos = JSON.parse( localStorage[ "alt_utxo_list" ] );
+                utxos.forEach( function( utxo ) {
+                    if ( utxo[ "toxic" ] && utxo[ "amount" ] > biggest_toxic_utxo_value ) {
+                        biggest_toxic_utxo_value = utxo[ "amount" ];
+                    } else if ( !utxo[ "toxic" ] ) {
+                        sum_of_all_coinjoined_utxo_values = sum_of_all_coinjoined_utxo_values + utxo[ "amount" ];
+                    }
+                });
+                var balance = ( biggest_toxic_utxo_value >= sum_of_all_coinjoined_utxo_values ) ? biggest_toxic_utxo_value:sum_of_all_coinjoined_utxo_values;
                 if ( balance < 1 ) return;
                 var message = String( balance - 546 );
+                console.log( "balance:", balance, "minus 546:", balance - 546 );
                 var event = {
                     "content"    : message,
                     "created_at" : Math.floor( Date.now() / 1000 ),
@@ -896,7 +919,23 @@
                     console.log( "message from " + sender_pubkey + ": " + message[ "content" ] );
                     //contribute one or more inputs and send their info to the coinjoin starter
                     var sats_per_byte = Number( JSON.parse( message[ "content" ] )[ "sats_per_byte" ] );
-                    var utxos_available_for_this_transaction = JSON.parse( localStorage[ "alt_utxo_list" ] );
+                    //use either the biggest toxic utxo I own if possible, otherwise a combination of my coinjoined utxos
+                    var biggest_toxic_utxo_value = 0;
+                    var biggest_toxic_utxo = [];
+                    var sum_of_all_coinjoined_utxo_values = 0;
+                    var coinjoined_utxos = [];
+                    var utxos = JSON.parse( localStorage[ "alt_utxo_list" ] );
+                    utxos.forEach( function( utxo ) {
+                        if ( utxo[ "toxic" ] && utxo[ "amount" ] > biggest_toxic_utxo_value ) {
+                            biggest_toxic_utxo_value = utxo[ "amount" ];
+                            biggest_toxic_utxo = [utxo];
+                        } else if ( !utxo[ "toxic" ] ) {
+                            sum_of_all_coinjoined_utxo_values = sum_of_all_coinjoined_utxo_values + utxo[ "amount" ];
+                            coinjoined_utxos.push( utxo );
+                        }
+                    });
+                    var utxos_available_for_this_transaction = ( biggest_toxic_utxo_value >= toamount + 546 ) ? biggest_toxic_utxo:coinjoined_utxos;
+                    console.log( "utxos I will contribute:", utxos_available_for_this_transaction );
                     var utxos_in_this_transaction = [];
                     var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
                     var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
@@ -1173,7 +1212,24 @@
                 }
                 console.log( coinjoin_inputs );
                 console.log( coinjoin_outputs );
-                var utxos_available_for_this_transaction = JSON.parse( localStorage[ "alt_utxo_list" ] );
+                //contribute either the biggest toxic utxo I own if possible, otherwise a combination of my coinjoined utxos
+                var biggest_toxic_utxo_value = 0;
+                var biggest_toxic_utxo = [];
+                var sum_of_all_coinjoined_utxo_values = 0;
+                var coinjoined_utxos = [];
+                var utxos = JSON.parse( localStorage[ "alt_utxo_list" ] );
+                utxos.forEach( function( utxo ) {
+                    if ( utxo[ "toxic" ] && utxo[ "amount" ] > biggest_toxic_utxo_value ) {
+                        biggest_toxic_utxo_value = utxo[ "amount" ];
+                        biggest_toxic_utxo = [utxo];
+                    } else if ( !utxo[ "toxic" ] ) {
+                        sum_of_all_coinjoined_utxo_values = sum_of_all_coinjoined_utxo_values + utxo[ "amount" ];
+                        coinjoined_utxos.push( utxo );
+                    }
+                });
+                var utxos_available_for_this_transaction = ( biggest_toxic_utxo_value >= toamount + 546 ) ? biggest_toxic_utxo:coinjoined_utxos;
+                console.log( "utxos I will contribute:", utxos_available_for_this_transaction );
+                //var utxos_available_for_this_transaction = JSON.parse( localStorage[ "alt_utxo_list" ] );
                 var utxos_in_this_transaction = [];
                 var original_utxos_available_for_this_transaction = JSON.stringify( utxos_available_for_this_transaction );
                 var original_utxos_in_this_transaction = JSON.stringify( utxos_in_this_transaction );
@@ -1489,7 +1545,7 @@
                 font-weight: bold;
                 font-size: 1.5rem;
             }
-            .start, .home, .settings_page, .receive, .history, .send, .scan {
+            .start, .home, .settings_page, .receive, .history, .send, .scan, .coin_control_page {
                 position: relative;
                 display: flex;
                 justify-content: center;
@@ -1500,7 +1556,7 @@
                 background-repeat: no-repeat;
                 background-position: 50% 50%;
             }
-            .start *, .home *, .settings_page *, .receive *, .history *, .send *, .scan *, {
+            .start *, .home *, .settings_page *, .receive *, .history *, .send *, .scan *, .coin_control_page * {
                 height: min-content;
             }
             .settings_page, .history {
@@ -1509,7 +1565,7 @@
                 align-items: flex-start;
                 height: auto;
             }
-            .start .row, .home .row, .receive .row, .history .row, .send .row, .scan .row {
+            .start .row, .home .row, .receive .row, .history .row, .send .row, .scan .row, .coin_control_page .row {
                 width: 100%;
                 text-align: center;
                 word-wrap: break-word;
@@ -1537,26 +1593,12 @@
                 padding: .6rem 30%;
                 width: auto;
             }
-            .home {
-                display: none;
-            }
-            .settings_page {
-                display: none;
-            }
-            .receive {
+            .home, .settings_page, .receive, .history, .send, .scan, .coin_control_page {
                 display: none;
             }
             .history {
-                display: none;
                 background-image: none;
                 align-items: center;
-                //overflow: scroll;
-            }
-            .send {
-                display: none;
-            }
-            .scan {
-                display: none;
             }
             span {
                 font-size: inherit;
@@ -1564,15 +1606,15 @@
             .balance-changer, .balance-changer * {
                 user-select: none;
             }
-            .flex-row, .settings-flex-row {
+            .flex-row {
                 width: 100%;
                 display: flex;
-                justify-content: space-between;
+                justify-content: center;
                 position: absolute;
                 bottom: 0px;
             }
-            .settings-flex-row {
-                justify-content: center;
+            .home .flex-row {
+                justify-content: space-between;
             }
             .send-btn, .txs-btn, .receive-btn {
                 margin: 1rem;
@@ -1590,16 +1632,42 @@
                 position: relative;
                 top: .4rem;
             }
-            .settings, .history-down {
+            .top_cont {
+                display: flex;
+                flex-direction: row-reverse;
+                justify-content: space-between;
+                width: 100%;
                 position: absolute;
                 top: -20px;
-                right: 10px;
+            }
+            .coin_control, .settings {
                 font-size: 2rem;
                 cursor: pointer;
+                margin-left: 1rem;
+                margin-right: 1rem;
+            }
+            .all_utxos {
+                height: 100%;
+                overflow: scroll;
+            }
+            .coin {
+                display: inline-block;
+                margin: 1rem;
+                padding: 1rem;
+                border: 1px solid orange;
+                border-radius: 1rem;
+                cursor: pointer;
+            }
+            .coin_icon {
+                font-size: 2rem;
             }
             .history-down {
+                position: absolute;
                 top: 1rem;
                 right: auto;
+                font-size: 2rem;
+                cursor: pointer;
+                width: min-content;
                 transform: rotate( 180deg );
             }
             .backup_words {
@@ -1651,7 +1719,10 @@
             </div>
         </div>
         <div class="home">
-            <div class="settings">⚙️</div>
+            <div class="top_cont">
+                <div class="settings">⚙️</div>
+                <div class="coin_control">🪙</div>
+            </div>
             <div class="row">
                 <h1 class="balance-changer sats"><span class="balance">Syncing... <span class="syncstat"><span class="syncnom">0</span>/<span class="syncdenom">40</span></span></span></h1>
             </div>
@@ -1660,6 +1731,20 @@
                 <button class="txs-btn"><span style="opacity: 0;">Txs</span></button>
                 <button class="receive-btn">Receive</button>
             </div>
+        </div>
+        <div class="coin_control_page">
+            <div class="row">
+                <div class="all_utxos">
+                    <p>Coinjoined utxos</p>
+                    <div class="cj_utxos"></div>
+                    <p>Toxic utxos</p>
+                    <div class="toxic_utxos"></div>
+                </div>
+            </div>
+            <div class="flex-row">
+                <button class="home-btn">Home</button>
+            </div>
+            <div style="clear: all; height: 7rem;"></div>
         </div>
         <div class="settings_page">
             <div class="row">
@@ -1682,7 +1767,7 @@
                     <button class="leave">Leave pool</button>
                 </div>
             </div>
-            <div class="settings-flex-row">
+            <div class="flex-row">
                 <button class="home-btn">Home</button>
             </div>
             <div style="clear: all; height: 7rem;"></div>
@@ -1694,7 +1779,7 @@
                     <span class="address"></span>
                 </div>
             </div>
-            <div class="settings-flex-row">
+            <div class="flex-row">
                 <button class="home-btn">Home</button>
             </div>
             <div style="clear: all; height: 7rem;"></div>
@@ -1704,7 +1789,7 @@
             <div class="row">
                 <div class="history-table"></div>
             </div>
-            <div class="settings-flex-row">
+            <div class="flex-row">
                 <button class="home-btn">Home</button>
             </div>
             <div style="clear: all; height: 7rem;"></div>
@@ -1747,7 +1832,7 @@
                     <div id="cj_status"></div>
                 </div>
             </div>
-            <div class="settings-flex-row">
+            <div class="flex-row">
                 <button class="home-btn">Home</button>
             </div>
             <div style="clear: all; height: 7rem;"></div>
@@ -1758,7 +1843,7 @@
                   <canvas style="position: absolute; top: 0px; left: 0px; right: 0px; bottom: 0px; margin: auto;" hidden="" id="canvas" class="qr-canvas"></canvas>
                 </div>
             </div>
-            <div class="settings-flex-row">
+            <div class="flex-row">
                 <button onclick="start();">Cancel</button>
             </div>
             <div style="clear: all; height: 7rem;"></div>
@@ -1856,7 +1941,7 @@
         $( '.banner-x' ).onclick = function() {
             localStorage[ "backed-up" ] = true;
             $( '.banner' ).style.display = "none";
-            $( '.settings' ).style.display = "flex";
+            $( '.top_cont' ).style.display = "flex";
         }
         $( '.banner-words' ).onclick = function() {
             $( '.banner' ).style.display = "none";
@@ -1865,11 +1950,71 @@
             $( 'html' ).style.height = "auto";
             $( 'body' ).style.height = "auto";
         }
+        $( '.coin_control' ).onclick = function() {
+            $( '.home' ).style.display = "none";
+            $( '.coin_control_page' ).style.display = "flex";
+            console.log ( $( '.all_utxos' ).offsetHeight );
+            var sum_of_all_toxic_utxo_values = 0;
+            var toxic_utxos = [];
+            var sum_of_all_coinjoined_utxo_values = 0;
+            var coinjoined_utxos = [];
+            var utxos = JSON.parse( localStorage[ "alt_utxo_list" ] );
+            $( '.cj_utxos' ).innerHTML = "";
+            $( '.toxic_utxos' ).innerHTML = "";
+            utxos.forEach( function( utxo ) {
+                if ( utxo[ "toxic" ] ) {
+                    sum_of_all_toxic_utxo_values = sum_of_all_toxic_utxo_values + utxo[ "amount" ];
+                    toxic_utxos.push( utxo );
+                } else {
+                    sum_of_all_coinjoined_utxo_values = sum_of_all_coinjoined_utxo_values + utxo[ "amount" ];
+                    coinjoined_utxos.push( utxo );
+                }
+            });
+            if ( coinjoined_utxos.length == 0 ) {
+                $( '.cj_utxos' ).innerHTML = "[none]";                
+            }
+            if ( toxic_utxos.length == 0 ) {
+                $( '.toxic_utxos' ).innerHTML = "[none]";                
+            }
+            coinjoined_utxos.forEach( function( utxo ) {
+                var icon = `<div class="coin" data-status="coinjoined" data-value="${utxo[ "amount" ]}"><div class="coin_icon coinjoined">🪙</div><div>${utxo[ "amount" ]} sats</div>`
+                $( '.cj_utxos' ).innerHTML += icon;
+            });
+            toxic_utxos.forEach( function( utxo ) {
+                var icon = `<div class="coin" data-status="toxic" data-value="${utxo[ "amount" ]}"><div class="coin_icon toxic">🪙</div><div>${utxo[ "amount" ]} sats</div>`
+                $( '.toxic_utxos' ).innerHTML += icon;
+            });
+            if ( $( '.all_utxos' ).offsetHeight > window.innerHeight - 100 ) {
+                $( 'html' ).style.height = "auto";
+                $( 'body' ).style.height = "auto";
+                $( '.coin_control_page .flex-row' ).style.bottom = "-8rem";
+                $( '.coin_control_page .flex-row' ).style.paddingBottom = "4rem";
+            }
+            $$( '.coin' ).forEach( function( coin ) {
+                coin.onclick = function() {
+                    var message = "I don't know what to say about this coin.";
+                    if ( coin.getAttribute( "data-status" ) == "toxic" ) {
+                        if ( Number( coin.getAttribute( "data-value" ) ) < 546 * 2 ) {
+                            message = `Coin type: Tiny Toxin\r\rWhat that means: This coin is tiny because its value is less than ${546 * 2} sats. It is toxic because it is not one of the equal value outputs of a coinjoin, which means its ownership history is publicly visible on the blockchain.\r\rWhy that's bad: A toxin can't be safely combined with other utxos you own without reducing the anonimity set of a prior coinjoin, harming your privacy and the privacy of others. And a tiny toxin is worse than a big toxin because it is *also* too small to use by itself. That is because, after it pays a mining fee, its value will be below bitcoin's dust limit.\r\rWhat you can do with it: Click OK to mark this utxo as a donation. It will be joined with other people's tiny toxins and sent to the tor foundation to reward privacy-focused developers for their efforts.`;
+                        } else {
+                            message = `Coin type: Big Toxin\r\rWhat that means: This coin is big because its value is more than ${546 * 2} sats. It is toxic because it is not one of the equal value outputs of a coinjoin, which means its ownership history is publicly visible on the blockchain.\r\rWhy that's bad: A toxin can't be safely combined with other utxos you own without reducing the anonimity set of a prior coinjoin, harming your privacy and the privacy of others. However, it is large enough to spend all by itself, even in a coinjoin, and doing that would not reduce the anonymity set of a prior coinjoin.\r\rWhat you can do with it: Click ok to send this coin to yourself in a coinjoin, thus rendering it safe and private to use in your future transactions.`;
+                        }
+                    } else {
+                        message = `Coin type: Secret Sats\r\rWhat that means: This coin is one of the equal value outputs of a coinjoin. Its ownership history is not publicly visible on the blockchain. No one knows who sent it to you except the sender and no one knows you own it except you.\r\rWhat you can do with it: This coin can be safely and privately sent to anyone on the bitcoin network. Your wallet will automatically use it when you construct a spending transaction in the future.`;
+                    }
+                    alert( message );
+                }
+            });
+        }
         $( '.settings' ).onclick = function() {
             $( '.home' ).style.display = "none";
             $( '.settings_page' ).style.display = "flex";
-            $( 'html' ).style.height = "auto";
-            $( 'body' ).style.height = "auto";
+            if ( $( '.settings_page' ).offsetHeight > window.innerHeight - 100 ) {
+                $( 'html' ).style.height = "auto";
+                $( 'body' ).style.height = "auto";
+                $( '.coin_control_page .flex-row' ).style.bottom = "-8rem";
+                $( '.coin_control_page .flex-row' ).style.paddingBottom = "4rem";
+            }
         }
         $( '.receive-btn' ).onclick = function() {
             $( '.home' ).style.display = "none";
@@ -1948,19 +2093,7 @@
             $( '.swim' ).style.display = "none";
             $( '.leave' ).style.display = "inline";
             sessionStorage[ "pool" ] = true;
-            var balance = Number( $( '.balance' ).innerText );
-            if ( balance < 1 ) return;
-            var message = String( balance - 546 );
-            var event = {
-                "content"    : message,
-                "created_at" : Math.floor( Date.now() / 1000 ),
-                "kind"       : 10063,
-                "tags"       : [],
-                "pubkey"     : nostr_pubKey,
-            }
-            var signedEvent = await getSignedEvent( event, nostr_privKey );
-            console.log( "pool event:", signedEvent );
-            socket.send( JSON.stringify( [ "EVENT", signedEvent ] ) );
+            swimInPool();
         }
         $( '.leave' ).onclick = async function() {
             $( '.leave' ).style.display = "none";
@@ -1985,12 +2118,13 @@
             $( '.history' ).style.display = "none";
             $( '.send' ).style.display = "none";
             $( '.scan' ).style.display = "none";
+            $( '.coin_control_page' ).style.display = "none";
             $( '.home' ).style.display = "flex";
             $( 'html' ).style.height = "100%";
             $( 'body' ).style.height = "100%";
             if ( !localStorage[ "backed-up" ] ) {
                 $( '.banner' ).style.display = "block";
-                $( '.settings' ).style.display = "none";
+                $( '.top_cont' ).style.display = "none";
             }
             if ( video && video.srcObject ) {
                 sessionStorage[ `stop-streaming` ] = true;
@@ -2091,7 +2225,7 @@
                         var backupwords = localStorage[ "backup_words" ];
                         var path = "84'/0'/0'";
                         var privkey = getPrivkeyHexFromPath( backupwords, path, index_of_address_that_received_money );
-                        var new_utxos = await getUTXOs( privkey );
+                        var new_utxos = await getUTXOs( privkey, "receive" );
                         var old_utxos = JSON.parse( localStorage[ "utxos" ] );
                         old_utxos.push( new_utxos );
                         localStorage[ "utxos" ] = old_utxos;
