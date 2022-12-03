@@ -1826,6 +1826,11 @@
             canvasElement.width = wideact;
             // canvasElement.height = video.videoHeight;
             // canvasElement.width = video.videoWidth;
+            if ( window.innerWidth < 600 ) {
+                var xval = -( $( '.scan' ).offsetWidth - 70 );
+                canvas.rotate( 90 * Math.PI / 180 );
+                canvas.translate( -100, xval );
+            }
             canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
             scanning && requestAnimationFrame(tick);
         }
