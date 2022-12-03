@@ -1683,6 +1683,7 @@
             }
             .pool {
                 display: none;
+                width: 100%;
             }
             .leave {
                 display: none;
@@ -1977,11 +1978,11 @@
                 $( '.toxic_utxos' ).innerHTML = "[none]";                
             }
             coinjoined_utxos.forEach( function( utxo ) {
-                var icon = `<div class="coin" data-status="coinjoined" data-value="${utxo[ "amount" ]}"><div class="coin_icon coinjoined">🪙</div><div>${utxo[ "amount" ]} sats</div>`
+                var icon = `<div class="coin" data-status="coinjoined" data-value="${utxo[ "amount" ]}"><div class="coin_icon coinjoined">🪙</div><div>${utxo[ "amount" ].toLocaleString()} sats</div>`
                 $( '.cj_utxos' ).innerHTML += icon;
             });
             toxic_utxos.forEach( function( utxo ) {
-                var icon = `<div class="coin" data-status="toxic" data-value="${utxo[ "amount" ]}"><div class="coin_icon toxic">🪙</div><div>${utxo[ "amount" ]} sats</div>`
+                var icon = `<div class="coin" data-status="toxic" data-value="${utxo[ "amount" ]}"><div class="coin_icon toxic">🪙</div><div>${utxo[ "amount" ].toLocaleString()} sats</div>`
                 $( '.toxic_utxos' ).innerHTML += icon;
             });
             if ( $( '.all_utxos' ).offsetHeight > window.innerHeight - 100 ) {
@@ -2009,11 +2010,8 @@
         $( '.settings' ).onclick = function() {
             $( '.home' ).style.display = "none";
             $( '.settings_page' ).style.display = "flex";
-            if ( $( '.settings_page' ).offsetHeight > window.innerHeight - 100 ) {
-                $( 'html' ).style.height = "auto";
-                $( 'body' ).style.height = "auto";
-                $( '.coin_control_page .flex-row' ).style.bottom = "-8rem";
-                $( '.coin_control_page .flex-row' ).style.paddingBottom = "4rem";
+            if ( $( '.settings_page' ).offsetHeight <= window.innerHeight - 100 ) {
+                $( '.settings_page' ).style.height = "100%";
             }
         }
         $( '.receive-btn' ).onclick = function() {
