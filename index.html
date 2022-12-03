@@ -1406,9 +1406,15 @@
             function getMaxSpend( pool ) {
                 var max = 0;
                 var poolkeys = Object.keys( pool );
-                poolkeys.sort();
-                poolkeys.reverse();
-                if ( poolkeys[ 0 ] && pool[ poolkeys[ 0 ] ].length > 1 ) {
+                var poolkeys2 = [];
+                poolkeys.forEach( function( key ) {
+                    poolkeys2.push( Number( key ) );
+                });
+                poolkeys = poolkeys2;
+                poolkeys.sort( function( a, b ) {
+                    return b - a;
+                });
+                if ( poolkeys[ 0 ] && pool[ String( poolkeys[ 0 ] ) ].length > 1 ) {
                     max = poolkeys[ 0 ];
                 } else {
                     if ( poolkeys[ 1 ] ) {
