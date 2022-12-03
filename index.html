@@ -1415,9 +1415,9 @@
                         max = poolkeys[ 1 ];
                     }
                 }
-                if ( !isNaN( $( '.balance' ).innerText ) && Number( $( '.balance' ).innerText ) < max ) {
-                    max = Number( $( '.balance' ).innerText );
-                }
+                // if ( !isNaN( $( '.balance' ).innerText ) && Number( $( '.balance' ).innerText ) < max ) {
+                //     max = Number( $( '.balance' ).innerText );
+                // }
                 return max;
             }
         </script>
@@ -1821,16 +1821,11 @@
             var highmax = Math.floor( ( 9 * widemax ) / 16 );
             var wideact = ( widemax > widemin ) ? widemax:widemin;
             var highact = ( wideact == widemin ) ? highmin:highmax;
-            //console.log( "actual width:", wideact, "actual height:", highact );
             canvasElement.height = highact;
             canvasElement.width = wideact;
-            // canvasElement.height = video.videoHeight;
-            // canvasElement.width = video.videoWidth;
+            canvas.transform(1,0,0,1.5,0,0);
             if ( window.innerWidth < 600 ) {
-                var xval = -( $( '.scan' ).offsetWidth - 70 );
-                //canvas.rotate( 90 * Math.PI / 180 );
                 canvas.transform(1,0,0,2,0,0);
-                //canvas.translate( -100, xval );
             }
             canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
             scanning && requestAnimationFrame(tick);
