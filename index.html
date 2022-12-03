@@ -1815,8 +1815,17 @@
             }
         };
         function tick() {
-            canvasElement.height = video.videoHeight;
-            canvasElement.width = video.videoWidth;
+            var widemax = $( '.scan' ).offsetWidth;
+            var highmin = 150;
+            var widemin = Math.floor( ( highmin * 16 ) / 9 );
+            var highmax = Math.floor( ( 9 * widemax ) / 16 );
+            var wideact = ( widemax > widemin ) ? widemax:widemin;
+            var highact = ( wideact == widemin ) ? highmin:highmax;
+            //console.log( "actual width:", wideact, "actual height:", highact );
+            canvasElement.height = highact;
+            canvasElement.width = wideact;
+            // canvasElement.height = video.videoHeight;
+            // canvasElement.width = video.videoWidth;
             canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
             scanning && requestAnimationFrame(tick);
         }
