@@ -1829,7 +1829,7 @@
             if ( window.innerWidth < 600 ) {
                 var xval = -( $( '.scan' ).offsetWidth - 70 );
                 //canvas.rotate( 90 * Math.PI / 180 );
-                canvas.transform(1,0,0,1.5,0,0);
+                canvas.transform(1,0,0,2,0,0);
                 //canvas.translate( -100, xval );
             }
             canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
@@ -1992,6 +1992,7 @@
                 $( '.settings' ).style.display = "none";
             }
             if ( video && video.srcObject ) {
+                sessionStorage[ `stop-streaming` ] = true;
                 video.srcObject.getTracks().forEach((track) => {
                     track.stop();
                 });
