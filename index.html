@@ -245,13 +245,6 @@
                                 if ( txIsACoinjoin( tx ) && item[ "value" ] == coinjoin_value ) {
                                     utxo[ "toxic" ] = false;
                                 }
-                                //the following three lines make the wallet pretend all the utxos in my receive path are coinjoined
-                                //that way it can actually use the utxos I have when constructing coinjoins
-                                //todo: they should be removed once I let users coinjoin their toxic utxos via the planned coin control tab
-                                //I need it now because almost all of my received utxos are toxic and cannot be individually coinjoined yet
-                                if ( path == "receive" ) {
-                                    utxo[ "toxic" ] = false;
-                                }
                                 obj[ "utxos" ].push( utxo );
                             });
                             resolve( obj );
@@ -281,14 +274,14 @@
                         var privkey = getPrivkeyHexFromPath( backupwords, path, i1 + i2 );
                         var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
                         var balance = await getAddressBalance( address );
-                        if ( balance < 1 ) {
-                            if ( $( '.syncnom' ) && !sessionStorage[ "syncing-change" ] ) {
-                                var old_nominator = Number( $( '.syncnom' ).innerText );
-                                if ( i2 > old_nominator ) {
-                                    $( '.syncnom' ).innerText = i2;
-                                    $( '.syncdenom' ).innerText = 40 + starting_index + starting_change_index;
-                                }
+                        if ( $( '.syncnom' ) && !sessionStorage[ "syncing-change" ] ) {
+                            var old_nominator = Number( $( '.syncnom' ).innerText );
+                            if ( i2 > old_nominator ) {
+                                $( '.syncnom' ).innerText = i2;
+                                $( '.syncdenom' ).innerText = 40 + starting_index + starting_change_index;
                             }
+                        }
+                        if ( balance < 1 ) {
                             i2 = Number( i2 ) + 1;
                         } else {
                             i1 = Number( i1 ) + 1;
@@ -319,15 +312,15 @@
                         var privkey = getPrivkeyHexFromPath( backupwords, path, i1 + i2 );
                         var address = getNativeSegwitAddressFromPrivkeyHex( privkey );
                         var balance = await getAddressBalance( address );
-                        if ( balance < 1 ) {
-                            if ( $( '.syncnom' ) ) {
-                                sessionStorage[ "syncing-change" ] = true;
-                                var old_nominator = Number( $( '.syncnom' ).innerText );
-                                if ( i2 + starting_index + 21 > old_nominator ) {
-                                    $( '.syncnom' ).innerText = i2 + starting_index + 21;
-                                    $( '.syncdenom' ).innerText = 40 + starting_index + starting_change_index;
-                                }
+                        if ( $( '.syncnom' ) ) {
+                            sessionStorage[ "syncing-change" ] = true;
+                            var old_nominator = Number( $( '.syncnom' ).innerText );
+                            if ( i2 + starting_index + 21 > old_nominator ) {
+                                $( '.syncnom' ).innerText = i2 + starting_index + 21;
+                                $( '.syncdenom' ).innerText = 40 + starting_index + starting_change_index;
                             }
+                        }
+                        if ( balance < 1 ) {
                             i2 = Number( i2 ) + 1;
                             if ( i2 > 19 ) {
                                 sessionStorage.removeItem( "syncing-change" );
@@ -1127,7 +1120,7 @@
                     return false;
                 }
             }
-            async function prepCoinjoin( toamount, toaddress ) {
+            async function prepCoinjoin( toamount, toaddress, preselected_utxos = [] ) {
                 if ( toamount > Number( $( '.max' ).innerText ) ) {
                     alert( "Sorry, there are not enough people in the pool to do a coinjoin with that amount. Try a lower amount or try again later." );
                     return;
@@ -1227,7 +1220,11 @@
                         coinjoined_utxos.push( utxo );
                     }
                 });
-                var utxos_available_for_this_transaction = ( biggest_toxic_utxo_value >= toamount + 546 ) ? biggest_toxic_utxo:coinjoined_utxos;
+                if ( preselected_utxos.length < 1 ) {
+                    var utxos_available_for_this_transaction = ( biggest_toxic_utxo_value >= toamount + 546 ) ? biggest_toxic_utxo:coinjoined_utxos;
+                } else {
+                    var utxos_available_for_this_transaction = preselected_utxos;
+                }
                 console.log( "utxos I will contribute:", utxos_available_for_this_transaction );
                 //var utxos_available_for_this_transaction = JSON.parse( localStorage[ "alt_utxo_list" ] );
                 var utxos_in_this_transaction = [];
@@ -1650,6 +1647,9 @@
                 height: 100%;
                 overflow: scroll;
             }
+            .coin, .coin * {
+                user-select: none;
+            }
             .coin {
                 display: inline-block;
                 margin: 1rem;
@@ -1954,7 +1954,6 @@
         $( '.coin_control' ).onclick = function() {
             $( '.home' ).style.display = "none";
             $( '.coin_control_page' ).style.display = "flex";
-            console.log ( $( '.all_utxos' ).offsetHeight );
             var sum_of_all_toxic_utxo_values = 0;
             var toxic_utxos = [];
             var sum_of_all_coinjoined_utxo_values = 0;
@@ -1978,39 +1977,70 @@
                 $( '.toxic_utxos' ).innerHTML = "[none]";                
             }
             coinjoined_utxos.forEach( function( utxo ) {
-                var icon = `<div class="coin" data-status="coinjoined" data-value="${utxo[ "amount" ]}"><div class="coin_icon coinjoined">🪙</div><div>${utxo[ "amount" ].toLocaleString()} sats</div>`
+                var coinid = utxo[ "tx_id" ] + ":" + utxo[ "output_number" ];
+                var icon = `<div class="coin" data-coinid="${coinid}" data-status="coinjoined" data-value="${utxo[ "amount" ]}"><div class="coin_icon coinjoined">🪙</div><div>${utxo[ "amount" ].toLocaleString()} sats</div>`
                 $( '.cj_utxos' ).innerHTML += icon;
             });
-            toxic_utxos.forEach( function( utxo ) {
-                var icon = `<div class="coin" data-status="toxic" data-value="${utxo[ "amount" ]}"><div class="coin_icon toxic">🪙</div><div>${utxo[ "amount" ].toLocaleString()} sats</div>`
+            toxic_utxos.forEach( function( utxo, index ) {
+                var coinid = utxo[ "tx_id" ] + ":" + utxo[ "output_number" ];
+                var icon = `<div class="coin" data-coinid="${coinid}" data-status="toxic" data-value="${utxo[ "amount" ]}"><div class="coin_icon toxic">🪙</div><div>${utxo[ "amount" ].toLocaleString()} sats</div>`
                 $( '.toxic_utxos' ).innerHTML += icon;
             });
-            if ( $( '.all_utxos' ).offsetHeight > window.innerHeight - 100 ) {
+            if ( $( '.all_utxos' ).offsetHeight > window.innerHeight - 200 ) {
                 $( 'html' ).style.height = "auto";
                 $( 'body' ).style.height = "auto";
                 $( '.coin_control_page .flex-row' ).style.bottom = "-8rem";
                 $( '.coin_control_page .flex-row' ).style.paddingBottom = "4rem";
             }
+            var coin_id = "";
+            var coin_status = "";
+            var coin_value = 0;
+            var action = "";
             $$( '.coin' ).forEach( function( coin ) {
-                coin.onclick = function() {
+                coin.onclick = async function() {
+                    coin_id = coin.getAttribute( "data-coinid" );
+                    coin_status = coin.getAttribute( "data-status" );
+                    coin_value = coin.getAttribute( "data-value" );
                     var message = "I don't know what to say about this coin.";
                     if ( coin.getAttribute( "data-status" ) == "toxic" ) {
                         if ( Number( coin.getAttribute( "data-value" ) ) < 546 * 2 ) {
-                            message = `Coin type: Tiny Toxin\r\rWhat that means: This coin is tiny because its value is less than ${546 * 2} sats. It is toxic because it is not one of the equal value outputs of a coinjoin, which means its ownership history is publicly visible on the blockchain.\r\rWhy that's bad: A toxin can't be safely combined with other utxos you own without reducing the anonimity set of a prior coinjoin, harming your privacy and the privacy of others. And a tiny toxin is worse than a big toxin because it is *also* too small to use by itself. That is because, after it pays a mining fee, its value will be below bitcoin's dust limit.\r\rWhat you can do with it: Click OK to mark this utxo as a donation. It will be joined with other people's tiny toxins and sent to the tor foundation to reward privacy-focused developers for their efforts.`;
+                            message = `Coin type: Tiny Toxin\r\rWhat that means: This coin is tiny because its value is less than ${546 * 2} sats. It is toxic because it is not one of the equal value outputs of a coinjoin, which means its ownership history is publicly visible on the blockchain.\r\rWhy that's bad: A toxin can't be safely combined with other utxos you own without reducing the anonymity set of a prior coinjoin, harming your privacy and the privacy of others. And a tiny toxin is worse than a big toxin because it is *also* too small to use by itself. That is because, after it pays a mining fee, its value will be below bitcoin's dust limit.\r\rWhat you can do with it: Click OK to mark this utxo as a donation. It will be joined with other people's tiny toxins and sent to the tor foundation to reward privacy-focused developers for their efforts.`;
+                            action = "mark_as_donation";
                         } else {
-                            message = `Coin type: Big Toxin\r\rWhat that means: This coin is big because its value is more than ${546 * 2} sats. It is toxic because it is not one of the equal value outputs of a coinjoin, which means its ownership history is publicly visible on the blockchain.\r\rWhy that's bad: A toxin can't be safely combined with other utxos you own without reducing the anonimity set of a prior coinjoin, harming your privacy and the privacy of others. However, it is large enough to spend all by itself, even in a coinjoin, and doing that would not reduce the anonymity set of a prior coinjoin.\r\rWhat you can do with it: Click ok to send this coin to yourself in a coinjoin, thus rendering it safe and private to use in your future transactions.`;
+                            message = `Coin type: Big Toxin\r\rWhat that means: This coin is big because its value is more than ${546 * 2} sats. It is toxic because it is not one of the equal value outputs of a coinjoin, which means its ownership history is publicly visible on the blockchain.\r\rWhy that's bad: A toxin can't be safely combined with other utxos you own without reducing the anonymity set of a prior coinjoin, harming your privacy and the privacy of others. However, it is large enough to spend all by itself, even in a coinjoin, and doing that would not reduce the anonymity set of a prior coinjoin.\r\rWhat you can do with it: Click ok to send this coin to yourself in a coinjoin, thus rendering it safe and private to use in your future transactions.`;
+                            action = "coinjoin_to_self";
                         }
                     } else {
                         message = `Coin type: Secret Sats\r\rWhat that means: This coin is one of the equal value outputs of a coinjoin. Its ownership history is not publicly visible on the blockchain. No one knows who sent it to you except the sender and no one knows you own it except you.\r\rWhat you can do with it: This coin can be safely and privately sent to anyone on the bitcoin network. Your wallet will automatically use it when you construct a spending transaction in the future.`;
+                        action = "";
                     }
-                    alert( message );
+                    var conf = confirm( message );
+                    if ( !conf || !action ) return;
+                    console.log( `ok doing this action: ${action} with this coin: ${coin_id} which has this status: ${coin_status} and this value: ${coin_value}` );
+                    if ( action == "coinjoin_to_self" ) {
+                        var available_utxos = [];
+                        utxos.forEach( function( utxo ) {
+                            if ( utxo[ "tx_id" ] != coin_id.substring( 0, coin_id.indexOf( ":" ) ) || utxo[ "output_number" ] != Number( coin_id.substring( coin_id.indexOf( ":" ) + 1 ) ) ) return;
+                            available_utxos.push( utxo );
+                        });
+                        var toamount = available_utxos[ 0 ][ "amount" ] - 750;
+                        var toaddress = await getFirstUnusedChangeAddress();
+                        console.log( "to amount:", toamount );
+                        console.log( "original amount:", available_utxos[ 0 ][ "amount" ] );
+                        console.log( "fee estimate:", available_utxos[ 0 ][ "amount" ] - toamount );
+                        console.log( "to address:", toaddress );
+                        prepCoinjoin( toamount, toaddress, available_utxos );
+                        start();
+                        $( '.send-btn' ).click();
+                        //return here
+                    }
                 }
             });
         }
         $( '.settings' ).onclick = function() {
             $( '.home' ).style.display = "none";
             $( '.settings_page' ).style.display = "flex";
-            if ( $( '.settings_page' ).offsetHeight <= window.innerHeight - 100 ) {
+            if ( $( '.settings_page' ).offsetHeight <= window.innerHeight - 200 ) {
                 $( '.settings_page' ).style.height = "100%";
             }
         }
