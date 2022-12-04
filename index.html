@@ -2291,6 +2291,9 @@
                             }
                         });
                         localStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
+                        start();
+                        $( '.coin_control' ).click();
+                        start();
                     } else {
                         //if my balance indicator does not have a number in it, it is syncing, which means it won't display my up to date balance because is syncing up to the point before the new money came in...so I should resync so that it *does* display the right balance
                         resync();
