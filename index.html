@@ -562,8 +562,8 @@
                     sum_of_the_values_of_each_input_to_this_transaction = sum_of_the_values_of_each_input_to_this_transaction + utxos_in_this_transaction[ i ][ "amount" ];
                     console.log( "the sum of the values of each input to this transaction is", sum_of_the_values_of_each_input_to_this_transaction );
                 }
-                if ( sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee < 546 ) {
-                    console.log( "the sum of the values of each input to this transaction, i.e.", sum_of_the_values_of_each_input_to_this_transaction, "minus the amount we need in the inputs, i.e.", amount_plus_fee, ", was less than the dust limit (546), so we need to run this function again with a higher amount_plus_fee value" );
+                if ( sum_of_the_values_of_each_input_to_this_transaction - amount_plus_fee < 546 + 750 ) {
+                    console.log( "the sum of the values of each input to this transaction, i.e.", sum_of_the_values_of_each_input_to_this_transaction, "minus the amount we need in the inputs, i.e.", amount_plus_fee, ", was less than the dust limit for this wallet (546 + 750 = 1296), so we need to run this function again with a higher amount_plus_fee value" );
                     var returnable = await contributeUtxosToCoinjoin( amount_plus_fee, utxos_available_for_this_transaction, utxos_in_this_transaction, sats_per_byte, false, this_addition_is_being_done_after_the_total_transaction_size_is_known, total_transaction_size, to_amount );
                     return returnable;
                 }
@@ -636,8 +636,8 @@
                         } else {
                             console.log( "there is no change left over so I do not need a change output, yay!" );
                         }
-                        if ( change_amount >= 546 ) {
-                            console.log( "the change amount --", change_amount, "-- is equal to or more than the dust limit of this wallet, which is 546. (It used to be 250 + 50 * sats_per_byte i.e.", ( 250 + 50 * sats_per_byte ), "because I added some to the dust limit so that the change amount would not go lower than the dust limit once I add another output, but this caused problems. Eventually I just set it to 546.) So I have to redo steps 4-9. I used to use a new amount_plus_fee of the previous amount_plus_fee plus 50*sats_per_byte, i.e.", original_amount_plus_fee + 50*sats_per_byte, "because I figured the transaction size would have to rise by about 50 bytes, but it causes problems so now I am redoing it without changing anything. Also I have to remember to use the old values of utxos_available_for_this_transaction and utxos_in_this_transaction" );
+                        if ( change_amount >= 546 + 750 ) {
+                            console.log( "the change amount --", change_amount, "-- is equal to or more than the dust limit of this wallet, which is 546 + 750 = 1296. (It used to be 250 + 50 * sats_per_byte i.e.", ( 250 + 50 * sats_per_byte ), "because I added some to the dust limit so that the change amount would not go lower than the dust limit once I add another output, but this caused problems. Eventually I just set it to 546, then, discovering that this caused some tiny toxic change outputs in void wallet which could not be spent by themselves without creating outputs below the dust limit, I raised it again to 546 + 750 because I find that it I can usually get by with a fee of 750 sats of less.) So I have to redo steps 4-9. I used to use a new amount_plus_fee of the previous amount_plus_fee plus 50*sats_per_byte, i.e.", original_amount_plus_fee + 50*sats_per_byte, "because I figured the transaction size would have to rise by about 50 bytes, but it causes problems so now I am redoing it without changing anything. Also I have to remember to use the old values of utxos_available_for_this_transaction and utxos_in_this_transaction" );
                             var we_need_a_change_address = true;
 //                                      new_amount_plus_fee = original_amount_plus_fee + ( 50*sats_per_byte );
                             new_amount_plus_fee = original_amount_plus_fee;
@@ -827,7 +827,7 @@
                     }
                 });
                 var balance = ( biggest_toxic_utxo_value >= sum_of_all_coinjoined_utxo_values ) ? biggest_toxic_utxo_value:sum_of_all_coinjoined_utxo_values;
-                if ( balance < 1 ) return;
+                if ( balance < 546 * 2 ) return;
                 var message = String( balance - 546 );
                 console.log( "balance:", balance, "minus 546:", balance - 546 );
                 var event = {
@@ -1197,7 +1197,7 @@
                 });
                 if ( i_should_halt ) {
                     $( "#progress" ).style.display = "none";
-                    $( "#progressBar" ).style.width = "0%";                    
+                    $( "#progressBar" ).style.width = "0%";
                     sessionStorage.removeItem( "num_of_participants" );
                     sessionStorage.removeItem( "info_about_the_participants" );
                     sessionStorage.removeItem( "sigs_info" );
@@ -1312,6 +1312,7 @@
                 console.log( `the transaction is this size (in bytes): ${tx.virtualSize()}`);
                 console.log( `the transaction fee is: ${final_psbt.getFee()} sats`);
                 var sat_or_sats = ( final_psbt.getFeeRate() == 1 ) ? "sat":"sats";
+                console.log( "utxos to remove from utxo set if you go through with this:", adjusted_utxos_in_this_transaction );
                 var conf = confirm( `This transaction will send ${toamount} sats to ${toaddress} through a coinjoin with ${other_participants.length + 1} people. The mining fee will cost ${final_psbt.getFee()} sats, which gives you a fee rate close to ${final_psbt.getFeeRate()} ${ sat_or_sats} per byte. (Note that it is hard to get a coinjoin's feerate to precisely match what you want. This should be close.) If you are okay with that, please click okay, otherwise you can cancel the payment.` );
                 if ( !conf ) {
                     $( "#progress" ).style.display = "none";
@@ -1326,6 +1327,29 @@
                 var new_balance = old_balance - toamount;
                 new_balance = new_balance - final_psbt.getFee();
                 $( '.balance' ).innerText = String( new_balance );
+                //remove the utxos I used up from my utxo lists
+                var old_utxo_set = JSON.parse( localStorage[ "utxos" ] );
+                adjusted_utxos_in_this_transaction.forEach( function( utxo_to_be_removed_from_old_utxo_set ) {
+                    old_utxo_set.every( function( old_utxo, index ) {
+                        if ( old_utxo[ "tx_id" ] == utxo_to_be_removed_from_old_utxo_set[ "tx_id" ] && old_utxo[ "output_number" ] == utxo_to_be_removed_from_old_utxo_set[ "output_number" ] ) {
+                            old_utxo_set.splice( index, 1 );
+                            return;
+                        }
+                        return true;
+                    });
+                });
+                localStorage[ "utxos" ] = JSON.stringify( old_utxo_set );
+                alt_utxo_list = [];
+                old_utxo_set.forEach( function( item ) {
+                    var i; for ( i=0; i<item[ "utxos" ].length; i++ ) {
+                        alt_utxo_list.push( item[ "utxos" ][ i ] );
+                    }
+                });
+                localStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
+                start();
+                $( '.coin_control' ).click();
+                start();
+                $( '.send-btn' ).click();
                 localStorage.removeItem( "utxos" );
                 localStorage.removeItem( "alt_utxo_list" );
                 localStorage.removeItem( "history" );
@@ -1388,6 +1412,10 @@
                             }
                         });
                     });
+                    //do not add yourself to your own pool otherwise you might try to coinjoin with yourself
+                    if ( event.pubkey == nostr_pubKey ) {
+                        do_not_add = true;
+                    }
                     //add a new entry to the pool
                     if ( !pool[ content ] && !isNaN( parseInt( content ) ) && !do_not_add ) {
                         pool[ content ] = [{"joiner": event.pubkey, "timestamp": event.created_at}];
@@ -1645,7 +1673,6 @@
             }
             .all_utxos {
                 height: 100%;
-                overflow: scroll;
             }
             .coin, .coin * {
                 user-select: none;
@@ -1736,9 +1763,9 @@
         <div class="coin_control_page">
             <div class="row">
                 <div class="all_utxos">
-                    <p>Coinjoined coins</p>
+                    <p>Private coins</p>
                     <div class="cj_utxos"></div>
-                    <p>Toxic coins</p>
+                    <p>Publicly tracable coins</p>
                     <div class="toxic_utxos"></div>
                 </div>
             </div>
@@ -1971,10 +1998,10 @@
                 }
             });
             if ( coinjoined_utxos.length == 0 ) {
-                $( '.cj_utxos' ).innerHTML = "[none]";                
+                $( '.cj_utxos' ).innerHTML = "[none]";
             }
             if ( toxic_utxos.length == 0 ) {
-                $( '.toxic_utxos' ).innerHTML = "[none]";                
+                $( '.toxic_utxos' ).innerHTML = "[none]";
             }
             coinjoined_utxos.forEach( function( utxo ) {
                 var coinid = utxo[ "tx_id" ] + ":" + utxo[ "output_number" ];
@@ -2003,11 +2030,11 @@
                     coin_value = coin.getAttribute( "data-value" );
                     var message = "I don't know what to say about this coin.";
                     if ( coin.getAttribute( "data-status" ) == "toxic" ) {
-                        if ( Number( coin.getAttribute( "data-value" ) ) < 546 * 2 ) {
-                            message = `Coin type: Tiny Toxin\r\rWhat that means: This coin is tiny because its value is less than ${546 * 2} sats. It is toxic because it is not one of the equal value outputs of a coinjoin, which means its ownership history is publicly visible on the blockchain.\r\rWhy that's bad: A toxin can't be safely combined with other utxos you own without reducing the anonymity set of a prior coinjoin, harming your privacy and the privacy of others. And a tiny toxin is worse than a big toxin because it is *also* too small to use by itself. That is because, after it pays a mining fee, its value will be below bitcoin's dust limit.\r\rWhat you can do with it: Click OK to mark this utxo as a donation. It will be joined with other people's tiny toxins and sent to the tor foundation to reward privacy-focused developers for their efforts.`;
+                        if ( Number( coin.getAttribute( "data-value" ) ) < 546 + 750 ) {
+                            message = `Coin type: Tiny Toxin\r\rWhat that means: This coin is tiny because its value is less than ${546 + 750} sats. It is toxic because it is not one of the equal value outputs of a coinjoin, which means its ownership history is publicly visible on the blockchain.\r\rWhy that's bad: A toxin can't be safely combined with other utxos you own without reducing the anonymity set of a prior coinjoin, harming your privacy and the privacy of others. And a tiny toxin is worse than a big toxin because it is *also* too small to use by itself. That is because, after it pays a mining fee, its value will be below bitcoin's dust limit.\r\rWhat you can do with it: Click OK to mark this utxo as a donation. It will be joined with other people's tiny toxins and sent to the tor foundation to reward privacy-focused developers for their efforts.`;
                             action = "mark_as_donation";
                         } else {
-                            message = `Coin type: Big Toxin\r\rWhat that means: This coin is big because its value is more than ${546 * 2} sats. It is toxic because it is not one of the equal value outputs of a coinjoin, which means its ownership history is publicly visible on the blockchain.\r\rWhy that's bad: A toxin can't be safely combined with other utxos you own without reducing the anonymity set of a prior coinjoin, harming your privacy and the privacy of others. However, it is large enough to spend all by itself, even in a coinjoin, and doing that would not reduce the anonymity set of a prior coinjoin.\r\rWhat you can do with it: Click ok to send this coin to yourself in a coinjoin, thus rendering it safe and private to use in your future transactions.`;
+                            message = `Coin type: Big Toxin\r\rWhat that means: This coin is big because its value is more than ${546 + 750} sats. It is toxic because it is not one of the equal value outputs of a coinjoin, which means its ownership history is publicly visible on the blockchain.\r\rWhy that's bad: A toxin can't be safely combined with other utxos you own without reducing the anonymity set of a prior coinjoin, harming your privacy and the privacy of others. However, it is large enough to spend all by itself, even in a coinjoin, and doing that would not reduce the anonymity set of a prior coinjoin.\r\rWhat you can do with it: Click ok to send this coin to yourself in a coinjoin, thus rendering it safe and private to use in your future transactions.`;
                             action = "coinjoin_to_self";
                         }
                     } else {
@@ -2032,7 +2059,6 @@
                         prepCoinjoin( toamount, toaddress, available_utxos );
                         start();
                         $( '.send-btn' ).click();
-                        //return here
                     }
                 }
             });
@@ -2249,6 +2275,7 @@
                         console.log( "balance to be added:", balance_to_be_added );
                         console.log( "new balance:", new_balance );
                         $( '.balance' ).innerText = String( new_balance );
+                        //add the new utxo I received to my utxo lists
                         var index_of_address_that_received_money = await getPreviousUnusedAddressIndexNumber();
                         var backupwords = localStorage[ "backup_words" ];
                         var path = "84'/0'/0'";
@@ -2257,6 +2284,13 @@
                         var old_utxos = JSON.parse( localStorage[ "utxos" ] );
                         old_utxos.push( new_utxos );
                         localStorage[ "utxos" ] = old_utxos;
+                        alt_utxo_list = [];
+                        old_utxos.forEach( function( item ) {
+                            var i; for ( i=0; i<item[ "utxos" ].length; i++ ) {
+                                alt_utxo_list.push( item[ "utxos" ][ i ] );
+                            }
+                        });
+                        localStorage[ "alt_utxo_list" ] = JSON.stringify( alt_utxo_list );
                     } else {
                         //if my balance indicator does not have a number in it, it is syncing, which means it won't display my up to date balance because is syncing up to the point before the new money came in...so I should resync so that it *does* display the right balance
                         resync();
